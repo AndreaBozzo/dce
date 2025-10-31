@@ -1,6 +1,5 @@
 # Data Contracts Engine (DCE)
 
-[![CI](https://github.com/yourusername/dce/workflows/CI/badge.svg)](https://github.com/yourusername/dce/actions)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 
 A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple formats and cloud providers.
