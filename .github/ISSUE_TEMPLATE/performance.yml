@@ -1,0 +1,119 @@
+name: ⚡ Performance Issue
+description: Report performance problems or suggest optimizations
+title: "[Performance]: "
+labels: ["performance", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us make DCE faster! Please provide benchmarks and profiling data if available.
+
+  - type: dropdown
+    id: perf-type
+    attributes:
+      label: Performance Issue Type
+      description: What kind of performance issue is this?
+      options:
+        - Slow validation
+        - High memory usage
+        - Slow parsing
+        - Slow CLI startup
+        - Compilation time
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the performance issue
+      placeholder: |
+        Validating a contract with 1000 fields takes 30 seconds...
+    validations:
+      required: true
+
+  - type: textarea
+    id: benchmark
+    attributes:
+      label: Benchmark Results
+      description: Please provide timing/memory measurements
+      render: shell
+      placeholder: |
+        $ time dce validate large_contract.yml
+        real    0m30.123s
+        user    0m25.456s
+        sys     0m4.567s
+
+        Memory: 2.5 GB peak
+
+  - type: textarea
+    id: dataset
+    attributes:
+      label: Dataset/Contract Characteristics
+      description: Describe the size and complexity of the data/contract
+      placeholder: |
+        - Contract fields: 1000
+        - Dataset size: 100 GB
+        - Row count: 1 billion
+        - Format: Iceberg
+
+  - type: textarea
+    id: profiling
+    attributes:
+      label: Profiling Data
+      description: If you've profiled the code, paste relevant output
+      render: shell
+      placeholder: |
+        Profiling with flamegraph shows...
+        Most time spent in...
+
+  - type: input
+    id: version
+    attributes:
+      label: DCE Version
+      description: What version are you testing?
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware Specs
+      description: CPU, RAM, disk type
+      placeholder: "16 core CPU, 32GB RAM, NVMe SSD"
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Performance
+      description: What performance would you expect for this workload?
+      placeholder: |
+        Should complete in under 5 seconds...
+        Should use less than 500MB memory...
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Optimization Suggestions
+      description: Any ideas for improving performance?
+      placeholder: |
+        Could parallelize field validation...
+        Could cache schema reads...
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have tested with the latest version of DCE
+          required: true
+        - label: I have included benchmark/profiling data
+          required: false

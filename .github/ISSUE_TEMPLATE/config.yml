@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/AndreaBozzo/dce/discussions
+    about: Ask questions, share ideas, and discuss with the community
+  - name: 📖 Documentation
+    url: https://github.com/AndreaBozzo/dce/blob/master/README.md
+    about: Read the documentation and guides
+  - name: 💼 Enterprise Support
+    url: https://github.com/AndreaBozzo/dce/discussions/categories/enterprise
+    about: Inquire about commercial support and consulting
