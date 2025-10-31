@@ -1,0 +1,23 @@
+[package]
+name = "contracts_iceberg"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Apache Iceberg integration for Data Contracts"
+
+[dependencies]
+contracts_core = { path = "../contracts_core" }
+contracts_validator = { path = "../contracts_validator" }
+iceberg = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

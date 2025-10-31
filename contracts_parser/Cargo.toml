@@ -1,5 +1,5 @@
 [package]
-name = "contracts_core"
+name = "contracts_parser"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,15 +8,15 @@ repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
-description = "Core data structures and types for Data Contracts Engine"
+description = "Parser for Data Contracts DSL (YAML/TOML formats)"
 
 [dependencies]
+contracts_core = { path = "../contracts_core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 thiserror = { workspace = true }
-chrono = { workspace = true }
-regex = { workspace = true }
+anyhow = { workspace = true }
 
 [dev-dependencies]
-iceberg = { workspace = true }
 pretty_assertions = { workspace = true }

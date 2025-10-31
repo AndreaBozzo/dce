@@ -1,0 +1,112 @@
+version: "1.0.0"
+name: user_events
+owner: analytics-team
+description: User interaction events dataset for analytics and ML
+
+schema:
+  format: iceberg
+  location: s3://data-lake/analytics/user_events
+  fields:
+    - name: event_id
+      type: string
+      nullable: false
+      description: Unique identifier for each event
+      tags:
+        - primary_key
+        - pii
+
+    - name: user_id
+      type: string
+      nullable: false
+      description: Unique user identifier
+      tags:
+        - pii
+        - partition_key
+
+    - name: event_type
+      type: string
+      nullable: false
+      description: Type of user interaction
+      constraints:
+        - type: allowedvalues
+          values:
+            - page_view
+            - button_click
+            - form_submit
+            - purchase
+            - sign_up
+            - sign_out
+
+    - name: event_timestamp
+      type: timestamp
+      nullable: false
+      description: When the event occurred (UTC)
+      tags:
+        - sort_key
+
+    - name: session_id
+      type: string
+      nullable: true
+      description: Session identifier for grouping events
+
+    - name: page_url
+      type: string
+      nullable: true
+      description: URL where the event occurred
+      constraints:
+        - type: pattern
+          regex: ^https?://.*
+
+    - name: user_agent
+      type: string
+      nullable: true
+      description: Browser user agent string
+
+    - name: ip_address
+      type: string
+      nullable: true
+      description: User IP address
+      tags:
+        - pii
+        - sensitive
+
+    - name: event_properties
+      type: map<string,string>
+      nullable: true
+      description: Additional event-specific properties
+
+quality_checks:
+  completeness:
+    threshold: 0.99
+    fields:
+      - event_id
+      - user_id
+      - event_type
+      - event_timestamp
+
+  uniqueness:
+    fields:
+      - event_id
+    scope: global
+
+  freshness:
+    max_delay: 1h
+    metric: event_timestamp
+
+  custom_checks:
+    - name: valid_event_types
+      definition: "SELECT COUNT(*) = 0 FROM user_events WHERE event_type NOT IN ('page_view', 'button_click', 'form_submit', 'purchase', 'sign_up', 'sign_out')"
+      severity: error
+
+    - name: future_timestamps
+      definition: "SELECT COUNT(*) = 0 FROM user_events WHERE event_timestamp > CURRENT_TIMESTAMP()"
+      severity: error
+
+    - name: session_completeness
+      definition: "SELECT COUNT(*) / (SELECT COUNT(*) FROM user_events) < 0.1 FROM user_events WHERE session_id IS NULL"
+      severity: warning
+
+sla:
+  availability: 0.999
+  response_time: 100ms
+  penalties: Credit 10% of monthly cost for every 0.1% below availability target

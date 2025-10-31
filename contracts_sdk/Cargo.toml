@@ -1,0 +1,23 @@
+[package]
+name = "contracts_sdk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Rust SDK for Data Contracts Engine - Public API"
+
+[dependencies]
+contracts_core = { path = "../contracts_core" }
+contracts_parser = { path = "../contracts_parser" }
+contracts_validator = { path = "../contracts_validator" }
+contracts_iceberg = { path = "../contracts_iceberg" }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }

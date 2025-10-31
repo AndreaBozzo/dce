@@ -32,3 +32,6 @@ ENV/
 .idea/
 *.swp
 .DS_Store
+
+# claude config files
+.claude/

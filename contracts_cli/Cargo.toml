@@ -1,0 +1,28 @@
+[package]
+name = "contracts_cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "CLI tool for Data Contracts Engine"
+
+[[bin]]
+name = "dce"
+path = "src/main.rs"
+
+[dependencies]
+contracts_core = { path = "../contracts_core" }
+contracts_parser = { path = "../contracts_parser" }
+contracts_validator = { path = "../contracts_validator" }
+contracts_iceberg = { path = "../contracts_iceberg" }
+clap = { workspace = true }
+colored = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
