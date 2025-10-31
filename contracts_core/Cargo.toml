@@ -12,5 +12,5 @@ chrono = { version = "0.4", features = ["serde"] }
 regex = "1.5"
 
 [dev-dependencies]
-iceberg = "0.10"
+iceberg = "0.7.0"
 pretty_assertions = "1.4"
