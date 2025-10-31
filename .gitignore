@@ -1,0 +1,32 @@
+# Rust
+/target/
+**/*.rlib
+**/*.dSYM
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+build/
+dist/
+eggs/
+*.egg-info/
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+ENV/
+.python-version
+.mypy_cache/
+.pytest_cache/
+
+# Virtualenv / env files
+.env
+
+# Common editor/OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
