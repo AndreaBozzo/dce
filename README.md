@@ -1,6 +1,12 @@
 # Data Contracts Engine (DCE)
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-pre--release-orange.svg)](https://github.com/yourusername/dce)
+[![Phase](https://img.shields.io/badge/phase-1%20foundation-blue.svg)](#roadmap)
+
+> **Note**: This project is in active development. v0.0.1 will be released upon Phase 1 completion.
+> **Currently Available**: Core types, YAML/TOML parsing, programmatic contract building
+> **Coming in v0.0.1**: Validation engine, CLI commands, Iceberg integration
 
 A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple formats and cloud providers.
 
@@ -8,40 +14,69 @@ A high-performance, Rust-native data contracts engine for modern data platforms.
 
 Data Contracts Engine provides a universal framework for defining and validating data contracts, ensuring data quality and compliance across your entire data platform. Unlike vendor-specific solutions, DCE is cloud-agnostic and supports multiple table formats.
 
-### Key Features
+### Available Now (v0.0.1-dev)
 
-- **🚀 Performance**: Rust-native implementation for maximum speed and efficiency
-- **🔄 Multi-Format Support**: Apache Iceberg, Delta Lake, Hudi, Parquet, and more
-- **☁️ Cloud-Agnostic**: Works with any cloud provider or on-premises deployment
-- **✅ Comprehensive Validation**: Schema, quality checks, freshness, and SLA enforcement
-- **🔧 Developer-Friendly**: Git-native workflow with CLI and SDK
-- **📦 Zero Dependencies**: Single binary deployment, no JVM required
-- **🔌 Extensible**: Plugin architecture for custom validators
+- **Type-Safe Contracts**: Rust-native data structures with full serde support
+- **YAML/TOML Parsing**: Load contracts from configuration files
+- **Builder Pattern API**: Ergonomic programmatic contract creation
+- **Comprehensive Types**: Schema, quality checks, SLA, field constraints
+- **Well-Tested**: 42 tests covering core functionality and parsing
+- **Fully Documented**: Complete rustdoc with examples
+
+### Planned for v0.0.1 Release
+
+- **Schema Validation**: Verify data against contract definitions
+- **CLI Tool**: `dce validate`, `dce init`, `dce check` commands
+- **Iceberg Integration**: Validate against Apache Iceberg tables
+- **Quality Checks**: Completeness, uniqueness, freshness validation
+- **Integration Tests**: End-to-end workflow testing
+
+### Future Roadmap (Post v0.0.1)
+
+- **Multi-Format Support**: Delta Lake, Hudi, Parquet
+- **Python SDK**: PyO3-based bindings
+- **Git Integration**: Pre-commit hooks, GitHub Actions
+- **Advanced Features**: ML-powered drift detection, auto-generation
+
+## What Works Right Now
+
+You can currently use DCE to:
+
+1. **Define contracts programmatically** using the builder pattern API
+2. **Parse YAML/TOML** contract files into type-safe Rust structures
+3. **Serialize contracts** back to YAML/JSON for storage
+4. **Inspect contract metadata** (schema, fields, quality checks, SLA)
+5. **Validate contract syntax** (via parsing)
+
+See [examples/contracts/user_events.yml](examples/contracts/user_events.yml) for a complete working example.
 
 ## Architecture
 
 ```
 dce/
-├── contracts_core      # Core data structures and types
-├── contracts_parser    # YAML/TOML contract parsing
-├── contracts_validator # Validation engine and traits
-├── contracts_iceberg   # Apache Iceberg integration
-├── contracts_cli       # Command-line interface (dce)
-└── contracts_sdk       # Public Rust SDK
+├── contracts_core      # ✅ Core data structures and types (COMPLETE)
+├── contracts_parser    # ✅ YAML/TOML contract parsing (COMPLETE)
+├── contracts_validator # ⏳ Validation engine (IN PROGRESS)
+├── contracts_iceberg   # ⏳ Apache Iceberg integration (PLANNED)
+├── contracts_cli       # ⏳ Command-line interface (PLANNED)
+└── contracts_sdk       # ⏳ Public Rust SDK (PLANNED)
 ```
 
 ## Quick Start
 
-### Installation
+### Current Usage (Development)
 
 ```bash
-# From crates.io
-cargo install contracts_cli
-
-# Or build from source
+# Clone and build
 git clone https://github.com/yourusername/dce
 cd dce
-cargo build --release
+cargo build --workspace
+
+# Run tests to see it in action
+cargo test --workspace
+
+# Generate documentation
+cargo doc --open --no-deps
 ```
 
 ### Define a Contract
@@ -88,7 +123,26 @@ sla:
   response_time: 100ms
 ```
 
-### Validate a Contract
+### Using Contracts (Available Now)
+
+```rust
+// Add to Cargo.toml:
+// contracts_parser = { path = "path/to/dce/contracts_parser" }
+// contracts_core = { path = "path/to/dce/contracts_core" }
+
+use contracts_parser::parse_file;
+use std::path::Path;
+
+// Load and inspect a contract
+let contract = parse_file(Path::new("user_events.yml"))?;
+println!("Contract: {} v{}", contract.name, contract.version);
+println!("Owner: {}", contract.owner);
+println!("Fields: {}", contract.schema.fields.len());
+```
+
+### CLI Commands (Coming in v0.0.1)
+
+The following commands are planned for the initial release:
 
 ```bash
 # Validate contract against actual data
@@ -97,59 +151,72 @@ dce validate user_events.yml
 # Schema-only validation
 dce validate --schema-only user_events.yml
 
-# Generate contract from existing data
+# Generate contract from existing Iceberg table
 dce init --from-iceberg s3://data/user_events
-```
-
-## Usage
-
-### CLI Commands
-
-```bash
-# Initialize a new contract
-dce init <name>
-
-# Validate a contract
-dce validate <contract.yml>
 
 # Compare two contract versions
-dce diff <old.yml> <new.yml>
+dce diff old.yml new.yml
 
 # Check contract compatibility
-dce check <contract.yml>
+dce check user_events.yml
 ```
 
-### Rust SDK
+### Rust SDK (Available Now)
 
 ```rust
-use contracts_core::{ContractBuilder, DataFormat, FieldBuilder};
+use contracts_core::{ContractBuilder, DataFormat, FieldBuilder, FieldConstraints};
 use contracts_parser::parse_file;
 use std::path::Path;
 
-// Parse a contract from YAML/TOML
-let contract = parse_file(Path::new("user_events.yml"))
+// 1. Parse a contract from YAML/TOML
+let contract = parse_file(Path::new("examples/contracts/user_events.yml"))
     .expect("Failed to parse contract");
 
-println!("Loaded contract: {} (v{})", contract.name, contract.version);
-println!("Schema has {} fields", contract.schema.fields.len());
+println!("Loaded: {} v{} (owner: {})",
+    contract.name, contract.version, contract.owner);
+println!("Schema: {} fields at {}",
+    contract.schema.fields.len(), contract.schema.location);
 
-// Or build a contract programmatically
+// Access quality checks
+if let Some(qc) = &contract.quality_checks {
+    if let Some(c) = &qc.completeness {
+        println!("Completeness threshold: {}", c.threshold);
+    }
+}
+
+// 2. Build a contract programmatically
 let contract = ContractBuilder::new("user_events", "analytics-team")
     .version("1.0.0")
+    .description("User interaction events")
     .location("s3://data/user_events")
     .format(DataFormat::Iceberg)
     .field(
         FieldBuilder::new("user_id", "string")
             .nullable(false)
             .description("Unique user identifier")
+            .tags(vec!["pii".to_string(), "primary_key".to_string()])
+            .build()
+    )
+    .field(
+        FieldBuilder::new("event_type", "string")
+            .nullable(false)
+            .constraint(FieldConstraints::AllowedValues {
+                values: vec!["click".to_string(), "view".to_string()],
+            })
             .build()
     )
     .build();
 
-// Serialize to YAML
+// 3. Serialize to YAML for storage/versioning
 let yaml = serde_yaml::to_string(&contract).unwrap();
 println!("{}", yaml);
+
+// 4. Serialize to JSON for APIs
+let json = serde_json::to_string_pretty(&contract).unwrap();
+println!("{}", json);
 ```
+
+**Note**: Actual data validation will be available in v0.0.1. Currently, you can only parse, build, and serialize contracts.
 
 ## Roadmap
 
@@ -207,20 +274,27 @@ cargo doc --workspace --no-deps --open
 
 ## Why DCE?
 
-### vs. Vendor-Specific Solutions
-- **No Lock-in**: Works with any cloud provider
-- **Open Source**: Full transparency and community-driven
-- **Lightweight**: No heavy infrastructure requirements
+**Note**: DCE is in early development. For production use today, consider mature alternatives like [Great Expectations](https://greatexpectations.io/), [Soda Core](https://www.soda.io/), or [dbt tests](https://docs.getdbt.com/docs/build/tests). DCE aims to differentiate through:
 
-### vs. Traditional Data Quality Tools
-- **Proactive**: Enforce contracts before problems occur
-- **Git-Native**: Version control for data contracts
-- **Developer-First**: CLI and SDK for automation
+### vs. Python-Based Tools (Great Expectations, Soda)
+- **Performance**: Rust-native for high-throughput validation (target: 10-100x faster)
+- **Embeddable**: No Python runtime needed, can embed in Rust data pipelines
+- **Memory Efficient**: Suitable for resource-constrained environments
+- **Single Binary**: Zero dependencies deployment
 
-### vs. Manual Processes
-- **Automated**: Continuous validation in CI/CD
-- **Consistent**: Single source of truth for data contracts
-- **Scalable**: Handles millions of records efficiently
+### vs. SQL-Based Tools (dbt tests)
+- **Pre-Ingestion**: Validate before data enters your warehouse
+- **Cloud-Agnostic**: Not tied to warehouse execution
+- **Format-Aware**: Native integration with Iceberg, Delta, Hudi table formats
+- **Schema Evolution**: Track contract changes alongside data changes
+
+### vs. Vendor Solutions
+- **Open Source**: Full transparency, community-driven development
+- **No Lock-in**: Works with any cloud provider or on-premises
+- **Git-Native**: Version contracts alongside code
+- **Extensible**: Plugin architecture for custom validators
+
+**Current Limitation**: DCE is not yet feature-complete. v0.0.1 will offer basic schema validation, with advanced features following in subsequent releases.
 
 ## License
 
@@ -246,11 +320,28 @@ Built with:
 
 ---
 
-**Status**: Active Development - Phase 1 (Foundation - 60% Complete)
+## Development Status
+
+**Current Phase**: Phase 1 - Foundation
+
+**Progress Overview**:
+- ✅ **Complete** (2/5): contracts_core, contracts_parser
+- ⏳ **In Progress** (0/5): contracts_validator (next up)
+- ⏸️ **Planned** (3/5): contracts_iceberg, contracts_cli, contracts_sdk
+
+**Phase 1 Completion**: ~40% (2/5 core components)
+
+**Target for v0.0.1**:
+- Validation engine with schema and constraint checking
+- Basic CLI with `validate` command
+- Iceberg table format support
+- End-to-end integration tests
 
 **Latest Updates**:
-- Parser implementation complete (YAML/TOML support)
-- Comprehensive test suite (42 tests across core and parser)
-- Core data structures fully tested and validated
+- 2025-01: Parser implementation complete (YAML/TOML support)
+- 2025-01: Comprehensive test suite (42 tests, 100% passing)
+- 2025-01: Core data structures fully tested and documented
+
+**Contributing**: We welcome contributors! The validator implementation is the next critical milestone. See open issues for details.
 
 For questions or feedback, please [open an issue](https://github.com/yourusername/dce/issues/new).
