@@ -220,7 +220,7 @@ println!("{}", json);
 
 ## Roadmap
 
-### Phase 1: Foundation (Months 1-3)
+### Phase 1: Foundation
 - [x] Core data structures and types
 - [x] Workspace setup and architecture
 - [x] Builder patterns and validators
@@ -229,20 +229,20 @@ println!("{}", json);
 - [ ] Apache Iceberg validator
 - [ ] CLI basic commands
 
-### Phase 2: Multi-Format (Months 4-6)
+### Phase 2: Multi-Format
 - [ ] Delta Lake support
 - [ ] Apache Hudi support
 - [ ] Python SDK
 - [ ] GitHub Actions integration
 - [ ] Pre-commit hooks
 
-### Phase 3: Ecosystem (Months 7-9)
+### Phase 3: Ecosystem
 - [ ] Great Expectations adapter
 - [ ] dbt integration
 - [ ] Apache Airflow operator
 - [ ] Spark connector
 
-### Phase 4: Intelligence (Months 10-12)
+### Phase 4: Intelligence
 - [ ] Auto-contract generation from data
 - [ ] ML-powered drift detection
 - [ ] Cost optimization recommendations
