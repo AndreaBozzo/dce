@@ -251,3 +251,303 @@ impl QualityChecksBuilder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_contract_builder_minimal() {
+        let contract = ContractBuilder::new("test", "team")
+            .location("s3://data")
+            .format(DataFormat::Parquet)
+            .build();
+
+        assert_eq!(contract.name, "test");
+        assert_eq!(contract.owner, "team");
+        assert_eq!(contract.version, "1.0.0"); // Default version
+        assert_eq!(contract.schema.location, "s3://data");
+        assert!(contract.description.is_none());
+        assert!(contract.quality_checks.is_none());
+        assert!(contract.sla.is_none());
+    }
+
+    #[test]
+    fn test_contract_builder_full() {
+        let field = FieldBuilder::new("id", "string").nullable(false).build();
+        let qc = QualityChecksBuilder::new()
+            .completeness(CompletenessCheck {
+                threshold: 0.95,
+                fields: vec!["id".to_string()],
+            })
+            .build();
+        let sla = SLA {
+            availability: Some(0.99),
+            response_time: Some("100ms".to_string()),
+            penalties: None,
+        };
+
+        let contract = ContractBuilder::new("users", "analytics")
+            .version("2.0.0")
+            .description("User data")
+            .location("s3://users")
+            .format(DataFormat::Iceberg)
+            .field(field)
+            .quality_checks(qc)
+            .sla(sla)
+            .build();
+
+        assert_eq!(contract.name, "users");
+        assert_eq!(contract.version, "2.0.0");
+        assert_eq!(contract.description, Some("User data".to_string()));
+        assert_eq!(contract.schema.fields.len(), 1);
+        assert!(contract.quality_checks.is_some());
+        assert!(contract.sla.is_some());
+    }
+
+    #[test]
+    #[should_panic(expected = "version is required")]
+    fn test_contract_builder_panic_missing_version() {
+        // Create builder without using new() to skip default version
+        let builder = ContractBuilder {
+            name: Some("test".to_string()),
+            owner: Some("team".to_string()),
+            version: None, // Missing version
+            location: Some("s3://data".to_string()),
+            format: Some(DataFormat::Parquet),
+            ..Default::default()
+        };
+        builder.build();
+    }
+
+    #[test]
+    #[should_panic(expected = "location is required")]
+    fn test_contract_builder_panic_missing_location() {
+        ContractBuilder::new("test", "team")
+            .format(DataFormat::Parquet)
+            .build();
+    }
+
+    #[test]
+    #[should_panic(expected = "format is required")]
+    fn test_contract_builder_panic_missing_format() {
+        ContractBuilder::new("test", "team")
+            .location("s3://data")
+            .build();
+    }
+
+    #[test]
+    fn test_contract_builder_multiple_fields() {
+        let fields = vec![
+            FieldBuilder::new("id", "string").build(),
+            FieldBuilder::new("name", "string").build(),
+        ];
+
+        let contract = ContractBuilder::new("test", "team")
+            .location("s3://data")
+            .format(DataFormat::Parquet)
+            .fields(fields)
+            .build();
+
+        assert_eq!(contract.schema.fields.len(), 2);
+        assert_eq!(contract.schema.fields[0].name, "id");
+        assert_eq!(contract.schema.fields[1].name, "name");
+    }
+
+    #[test]
+    fn test_field_builder_minimal() {
+        let field = FieldBuilder::new("user_id", "string").build();
+
+        assert_eq!(field.name, "user_id");
+        assert_eq!(field.field_type, "string");
+        assert!(field.nullable); // Default is true
+        assert!(field.description.is_none());
+        assert!(field.tags.is_none());
+        assert!(field.constraints.is_none());
+    }
+
+    #[test]
+    fn test_field_builder_full() {
+        let field = FieldBuilder::new("email", "string")
+            .nullable(false)
+            .description("User email address")
+            .tags(vec!["pii".to_string(), "required".to_string()])
+            .constraint(FieldConstraints::Pattern {
+                regex: r"^[a-z]+@[a-z]+\.[a-z]+$".to_string(),
+            })
+            .build();
+
+        assert_eq!(field.name, "email");
+        assert!(!field.nullable);
+        assert_eq!(field.description, Some("User email address".to_string()));
+        assert_eq!(
+            field.tags,
+            Some(vec!["pii".to_string(), "required".to_string()])
+        );
+        assert_eq!(field.constraints.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_field_builder_multiple_constraints() {
+        let field = FieldBuilder::new("age", "int32")
+            .constraint(FieldConstraints::Range {
+                min: 0.0,
+                max: 150.0,
+            })
+            .constraint(FieldConstraints::Custom {
+                definition: "age > 18".to_string(),
+            })
+            .build();
+
+        let constraints = field.constraints.as_ref().unwrap();
+        assert_eq!(constraints.len(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "name is required")]
+    fn test_field_builder_panic_missing_name() {
+        FieldBuilder::default().build();
+    }
+
+    #[test]
+    #[should_panic(expected = "field_type is required")]
+    fn test_field_builder_panic_missing_type() {
+        // Create builder without type
+        let builder = FieldBuilder {
+            name: Some("id".to_string()),
+            field_type: None, // Missing type
+            ..Default::default()
+        };
+        builder.build();
+    }
+
+    #[test]
+    fn test_quality_checks_builder_empty() {
+        let qc = QualityChecksBuilder::new().build();
+
+        assert!(qc.completeness.is_none());
+        assert!(qc.uniqueness.is_none());
+        assert!(qc.freshness.is_none());
+        assert!(qc.custom_checks.is_none());
+    }
+
+    #[test]
+    fn test_quality_checks_builder_full() {
+        let qc = QualityChecksBuilder::new()
+            .completeness(CompletenessCheck {
+                threshold: 0.99,
+                fields: vec!["id".to_string()],
+            })
+            .uniqueness(UniquenessCheck {
+                fields: vec!["id".to_string()],
+                scope: Some("global".to_string()),
+            })
+            .freshness(FreshnessCheck {
+                max_delay: "1h".to_string(),
+                metric: "updated_at".to_string(),
+            })
+            .custom_check(CustomCheck {
+                name: "check1".to_string(),
+                definition: "COUNT(*) > 0".to_string(),
+                severity: Some("error".to_string()),
+            })
+            .custom_check(CustomCheck {
+                name: "check2".to_string(),
+                definition: "AVG(value) < 100".to_string(),
+                severity: Some("warning".to_string()),
+            })
+            .build();
+
+        assert!(qc.completeness.is_some());
+        assert!(qc.uniqueness.is_some());
+        assert!(qc.freshness.is_some());
+        assert_eq!(qc.custom_checks.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_data_format_custom() {
+        let contract = ContractBuilder::new("test", "team")
+            .location("s3://data")
+            .format(DataFormat::Custom("MyCustomFormat".to_string()))
+            .build();
+
+        match contract.schema.format {
+            DataFormat::Custom(ref name) => assert_eq!(name, "MyCustomFormat"),
+            _ => panic!("Expected Custom format"),
+        }
+    }
+
+    #[test]
+    fn test_field_constraints_custom() {
+        let field = FieldBuilder::new("score", "float")
+            .constraint(FieldConstraints::Custom {
+                definition: "score BETWEEN 0 AND 100".to_string(),
+            })
+            .build();
+
+        let constraints = field.constraints.as_ref().unwrap();
+        assert_eq!(constraints.len(), 1);
+
+        match &constraints[0] {
+            FieldConstraints::Custom { definition } => {
+                assert_eq!(definition, "score BETWEEN 0 AND 100");
+            }
+            _ => panic!("Expected Custom constraint"),
+        }
+    }
+
+    #[test]
+    fn test_field_constraints_allowed_values() {
+        let field = FieldBuilder::new("status", "string")
+            .constraint(FieldConstraints::AllowedValues {
+                values: vec!["active".to_string(), "inactive".to_string()],
+            })
+            .build();
+
+        let constraints = field.constraints.as_ref().unwrap();
+        match &constraints[0] {
+            FieldConstraints::AllowedValues { values } => {
+                assert_eq!(values.len(), 2);
+                assert_eq!(values[0], "active");
+            }
+            _ => panic!("Expected AllowedValues constraint"),
+        }
+    }
+
+    #[test]
+    fn test_field_constraints_range() {
+        let field = FieldBuilder::new("temperature", "double")
+            .constraint(FieldConstraints::Range {
+                min: -273.15,
+                max: 1000.0,
+            })
+            .build();
+
+        let constraints = field.constraints.as_ref().unwrap();
+        match &constraints[0] {
+            FieldConstraints::Range { min, max } => {
+                assert_eq!(*min, -273.15);
+                assert_eq!(*max, 1000.0);
+            }
+            _ => panic!("Expected Range constraint"),
+        }
+    }
+
+    #[test]
+    fn test_field_constraints_pattern() {
+        let field = FieldBuilder::new("uuid", "string")
+            .constraint(FieldConstraints::Pattern {
+                regex: r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    .to_string(),
+            })
+            .build();
+
+        let constraints = field.constraints.as_ref().unwrap();
+        match &constraints[0] {
+            FieldConstraints::Pattern { regex } => {
+                assert!(regex.contains("^[0-9a-f]{8}"));
+            }
+            _ => panic!("Expected Pattern constraint"),
+        }
+    }
+}
