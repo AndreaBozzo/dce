@@ -208,7 +208,7 @@ let contract = ContractBuilder::new("user_events", "analytics-team")
     .build();
 
 // 3. Serialize to YAML for storage/versioning
-let yaml = serde_yaml::to_string(&contract).unwrap();
+let yaml = serde_yaml_ng::to_string(&contract).unwrap();
 println!("{}", yaml);
 
 // 4. Serialize to JSON for APIs

@@ -35,7 +35,7 @@ use thiserror::Error;
 pub enum ParserError {
     /// YAML parsing or deserialization failed
     #[error("Failed to parse YAML: {0}")]
-    YamlError(#[from] serde_yaml::Error),
+    YamlError(#[from] serde_yaml_ng::Error),
 
     /// TOML parsing or deserialization failed
     #[error("Failed to parse TOML: {0}")]
@@ -91,7 +91,7 @@ pub enum ContractFormat {
 /// assert_eq!(contract.name, "my_dataset");
 /// ```
 pub fn parse_yaml(content: &str) -> Result<Contract> {
-    let contract: Contract = serde_yaml::from_str(content)?;
+    let contract: Contract = serde_yaml_ng::from_str(content)?;
     Ok(contract)
 }
 
@@ -519,7 +519,7 @@ name = "test"
         };
 
         // Serialize to YAML
-        let yaml = serde_yaml::to_string(&original).expect("Failed to serialize");
+        let yaml = serde_yaml_ng::to_string(&original).expect("Failed to serialize");
 
         // Parse it back
         let parsed = parse_yaml(&yaml).expect("Failed to parse");

@@ -57,7 +57,7 @@ DCE is designed as a modular, extensible system for defining and validating data
 - Schema validation
 - Contract versioning logic
 
-**Dependencies**: contracts_core, serde_yaml
+**Dependencies**: contracts_core, serde_yaml_ng
 
 ### contracts_validator
 **Purpose**: Generic validation engine
