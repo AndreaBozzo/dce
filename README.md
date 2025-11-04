@@ -1,7 +1,7 @@
 # Data Contracts Engine (DCE)
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-pre--release-orange.svg)](https://github.com/yourusername/dce)
+[![Status](https://img.shields.io/badge/status-pre--release-orange.svg)](https://github.com/AndreaBozzo/dce)
 [![Phase](https://img.shields.io/badge/phase-1%20foundation-blue.svg)](#roadmap)
 
 > **Note**: This project is in active development. v0.0.1 will be released upon Phase 1 completion.
@@ -10,21 +10,55 @@
 
 A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple formats and cloud providers.
 
+## Origin Story
+
+DCE evolves from [dataprof](https://github.com/AndreaBozzo/dataprof), a fast data quality assessment tool built in Rust. While dataprof excels at profiling and analyzing existing datasets (completeness, consistency, uniqueness, accuracy, timeliness), DCE shifts the paradigm toward **proactive data contracts**—defining, validating, and enforcing quality expectations *before* data enters your platform. Think of dataprof as the diagnostic tool and DCE as the preventive framework that ensures data quality from the outset.
+
+### From Assessment to Contracts: The Evolution
+
+| Aspect | dataprof | DCE |
+|--------|----------|-----|
+| **Purpose** | Analyze & profile existing data | Define & enforce data contracts |
+| **Approach** | Reactive (diagnose issues) | Proactive (prevent issues) |
+| **Use Case** | "What's wrong with my data?" | "Does my data meet the contract?" |
+| **Output** | Quality reports & visualizations | Validation pass/fail with detailed errors |
+| **Integration** | CLI, Python bindings, GitHub Actions | Rust SDK, CLI (planned), multiple formats |
+| **Focus** | Data assessment & profiling | Contract validation & enforcement |
+
+Both tools share Rust's performance benefits (memory efficiency, speed, safety), but serve complementary roles in a data quality strategy: dataprof helps you understand your data, DCE helps you control it.
+
 ## Overview
 
 Data Contracts Engine provides a universal framework for defining and validating data contracts, ensuring data quality and compliance across your entire data platform. Unlike vendor-specific solutions, DCE is cloud-agnostic and supports multiple table formats.
 
-### Available Now (v0.0.1-dev)
+### What's Available Now (v0.0.1-dev)
 
+DCE currently provides a complete validation framework with the following capabilities:
+
+**Core Features:**
 - **Type-Safe Contracts**: Rust-native data structures with full serde support
 - **YAML/TOML Parsing**: Load contracts from configuration files
 - **Builder Pattern API**: Ergonomic programmatic contract creation
 - **Validation Engine**: Schema, constraint, and quality checks validation
-- **Comprehensive Types**: Schema, quality checks, SLA, field constraints
+- **Multiple Validation Modes**: Strict, non-strict, and schema-only validation
+- **Comprehensive Types**: Schema definitions, quality checks, SLA specifications, field constraints
+- **Serialization**: Export contracts to YAML/JSON for storage and versioning
+
+**Quality Assurance:**
 - **Well-Tested**: 109 tests covering core functionality, parsing, and validation
 - **Fully Documented**: Complete rustdoc with examples
 
-### Planned for v0.0.1 Release
+**You can currently:**
+1. Define contracts programmatically using the builder pattern API
+2. Parse YAML/TOML contract files into type-safe Rust structures
+3. Validate data against contracts (schema, constraints, quality checks)
+4. Serialize contracts back to YAML/JSON for storage
+5. Inspect contract metadata (schema, fields, quality checks, SLA)
+6. Run validation in multiple modes (strict, non-strict, schema-only)
+
+See [examples/contracts/user_events.yml](examples/contracts/user_events.yml) for a complete working example.
+
+### Coming in v0.0.1 Release
 
 - **CLI Tool**: `dce validate`, `dce init`, `dce check` commands
 - **Iceberg Integration**: Validate against Apache Iceberg tables
@@ -36,19 +70,6 @@ Data Contracts Engine provides a universal framework for defining and validating
 - **Python SDK**: PyO3-based bindings
 - **Git Integration**: Pre-commit hooks, GitHub Actions
 - **Advanced Features**: ML-powered drift detection, auto-generation
-
-## What Works Right Now
-
-You can currently use DCE to:
-
-1. **Define contracts programmatically** using the builder pattern API
-2. **Parse YAML/TOML** contract files into type-safe Rust structures
-3. **Validate data against contracts** (schema, constraints, quality checks)
-4. **Serialize contracts** back to YAML/JSON for storage
-5. **Inspect contract metadata** (schema, fields, quality checks, SLA)
-6. **Run validation in multiple modes** (strict, non-strict, schema-only)
-
-See [examples/contracts/user_events.yml](examples/contracts/user_events.yml) for a complete working example.
 
 ## Architecture
 
@@ -68,7 +89,7 @@ dce/
 
 ```bash
 # Clone and build
-git clone https://github.com/yourusername/dce
+git clone https://github.com/AndreaBozzo/dce
 cd dce
 cargo build --workspace
 
@@ -126,10 +147,12 @@ sla:
 ### Using Contracts (Available Now)
 
 ```rust
-// Add to Cargo.toml:
+// Add to Cargo.toml (development path dependencies):
 // contracts_parser = { path = "path/to/dce/contracts_parser" }
 // contracts_validator = { path = "path/to/dce/contracts_validator" }
 // contracts_core = { path = "path/to/dce/contracts_core" }
+//
+// Note: Will be available from crates.io after v0.0.1 release
 
 use contracts_parser::parse_file;
 use contracts_validator::{DataValidator, DataSet, DataValue};
@@ -273,13 +296,13 @@ println!("{}", json);
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+We welcome contributions! Check our [issue tracker](https://github.com/AndreaBozzo/dce/issues) for open tasks and enhancement opportunities.
 
 ### Development Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/dce
+git clone https://github.com/AndreaBozzo/dce
 cd dce
 
 # Build the workspace
@@ -300,9 +323,9 @@ cargo doc --workspace --no-deps --open
 **Note**: DCE is in early development. For production use today, consider mature alternatives like [Great Expectations](https://greatexpectations.io/), [Soda Core](https://www.soda.io/), or [dbt tests](https://docs.getdbt.com/docs/build/tests). DCE aims to differentiate through:
 
 ### vs. Python-Based Tools (Great Expectations, Soda)
-- **Performance**: Rust-native for high-throughput validation (target: 10-100x faster)
+- **Performance**: Rust-native for high-throughput validation with minimal overhead
 - **Embeddable**: No Python runtime needed, can embed in Rust data pipelines
-- **Memory Efficient**: Suitable for resource-constrained environments
+- **Memory Efficient**: Suitable for resource-constrained environments (building on dataprof's 20x memory efficiency)
 - **Single Binary**: Zero dependencies deployment
 
 ### vs. SQL-Based Tools (dbt tests)
@@ -317,7 +340,7 @@ cargo doc --workspace --no-deps --open
 - **Git-Native**: Version contracts alongside code
 - **Extensible**: Plugin architecture for custom validators
 
-**Current Limitation**: DCE is not yet feature-complete. v0.0.1 will offer basic schema validation, with advanced features following in subsequent releases.
+**Current Limitation**: DCE is not yet feature-complete. v0.0.1 will offer schema and constraint validation with Iceberg support, with advanced features (multi-format support, ML-powered detection) following in subsequent releases.
 
 ## License
 
@@ -330,9 +353,9 @@ You may choose either license for your use.
 
 ## Community
 
-- [GitHub Discussions](https://github.com/yourusername/dce/discussions)
-- [Issue Tracker](https://github.com/yourusername/dce/issues)
-- [Contributing Guide](CONTRIBUTING.md)
+- [GitHub Discussions](https://github.com/AndreaBozzo/dce/discussions)
+- [Issue Tracker](https://github.com/AndreaBozzo/dce/issues)
+- [Contributing Guide](CONTRIBUTING.md) (coming soon)
 
 ## Acknowledgments
 
@@ -345,27 +368,25 @@ Built with:
 
 ## Development Status
 
-**Current Phase**: Phase 1 - Foundation
+**Current Phase**: Phase 1 - Foundation (~60% complete)
 
-**Progress Overview**:
-- ✅ **Complete** (3/5): contracts_core, contracts_parser, contracts_validator
-- ⏳ **In Progress** (0/5): contracts_iceberg (next up)
-- ⏸️ **Planned** (2/5): contracts_cli, contracts_sdk
-
-**Phase 1 Completion**: ~60% (3/5 core components)
-
-**Target for v0.0.1**:
-- ✅ Validation engine with schema and constraint checking
-- Basic CLI with `validate` command
-- Iceberg table format support
-- End-to-end integration tests
+**Component Status**:
+- ✅ **Complete**: contracts_core, contracts_parser, contracts_validator
+- ⏳ **Next Up**: contracts_iceberg (Apache Iceberg integration)
+- ⏸️ **Planned**: contracts_cli, contracts_sdk
 
 **Latest Updates**:
-- 2025-01: Validation engine complete (schema, constraints, quality checks)
-- 2025-01: Comprehensive test suite (109 tests, 100% passing)
-- 2025-01: Parser implementation complete (YAML/TOML support)
-- 2025-01: Core data structures fully tested and documented
+- **November 4, 2025**: Validation engine complete with comprehensive test suite (109 tests)
+- **November 1, 2025**: Parser implementation complete (YAML/TOML support)
+- **November 1, 2025**: Dependencies updated, documentation improvements
+- **October 31, 2025**: Core data structures and workspace architecture established
 
-**Contributing**: We welcome contributors! The Iceberg integration is the next critical milestone. See open issues for details.
+**What's Next for v0.0.1**:
+1. Apache Iceberg integration for validating against real tables
+2. CLI with `validate`, `init`, and `check` commands
+3. End-to-end integration tests
+4. First public release
 
-For questions or feedback, please [open an issue](https://github.com/yourusername/dce/issues/new).
+**Contributing**: We welcome contributors! The Iceberg integration is the next critical milestone. Check our [issue tracker](https://github.com/AndreaBozzo/dce/issues) for opportunities to contribute.
+
+For questions or feedback, please [open an issue](https://github.com/AndreaBozzo/dce/issues/new).
