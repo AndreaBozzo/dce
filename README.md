@@ -5,8 +5,8 @@
 [![Phase](https://img.shields.io/badge/phase-1%20foundation-blue.svg)](#roadmap)
 
 > **Note**: This project is in active development. v0.0.1 will be released upon Phase 1 completion.
-> **Currently Available**: Core types, YAML/TOML parsing, programmatic contract building
-> **Coming in v0.0.1**: Validation engine, CLI commands, Iceberg integration
+> **Currently Available**: Core types, YAML/TOML parsing, validation engine, programmatic contract building
+> **Coming in v0.0.1**: CLI commands, Iceberg integration
 
 A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple formats and cloud providers.
 
@@ -19,17 +19,16 @@ Data Contracts Engine provides a universal framework for defining and validating
 - **Type-Safe Contracts**: Rust-native data structures with full serde support
 - **YAML/TOML Parsing**: Load contracts from configuration files
 - **Builder Pattern API**: Ergonomic programmatic contract creation
+- **Validation Engine**: Schema, constraint, and quality checks validation
 - **Comprehensive Types**: Schema, quality checks, SLA, field constraints
-- **Well-Tested**: 42 tests covering core functionality and parsing
+- **Well-Tested**: 109 tests covering core functionality, parsing, and validation
 - **Fully Documented**: Complete rustdoc with examples
 
 ### Planned for v0.0.1 Release
 
-- **Schema Validation**: Verify data against contract definitions
 - **CLI Tool**: `dce validate`, `dce init`, `dce check` commands
 - **Iceberg Integration**: Validate against Apache Iceberg tables
-- **Quality Checks**: Completeness, uniqueness, freshness validation
-- **Integration Tests**: End-to-end workflow testing
+- **Integration Tests**: End-to-end workflow testing with Iceberg
 
 ### Future Roadmap (Post v0.0.1)
 
@@ -44,9 +43,10 @@ You can currently use DCE to:
 
 1. **Define contracts programmatically** using the builder pattern API
 2. **Parse YAML/TOML** contract files into type-safe Rust structures
-3. **Serialize contracts** back to YAML/JSON for storage
-4. **Inspect contract metadata** (schema, fields, quality checks, SLA)
-5. **Validate contract syntax** (via parsing)
+3. **Validate data against contracts** (schema, constraints, quality checks)
+4. **Serialize contracts** back to YAML/JSON for storage
+5. **Inspect contract metadata** (schema, fields, quality checks, SLA)
+6. **Run validation in multiple modes** (strict, non-strict, schema-only)
 
 See [examples/contracts/user_events.yml](examples/contracts/user_events.yml) for a complete working example.
 
@@ -56,7 +56,7 @@ See [examples/contracts/user_events.yml](examples/contracts/user_events.yml) for
 dce/
 ├── contracts_core      # ✅ Core data structures and types (COMPLETE)
 ├── contracts_parser    # ✅ YAML/TOML contract parsing (COMPLETE)
-├── contracts_validator # ⏳ Validation engine (IN PROGRESS)
+├── contracts_validator # ✅ Validation engine (COMPLETE)
 ├── contracts_iceberg   # ⏳ Apache Iceberg integration (PLANNED)
 ├── contracts_cli       # ⏳ Command-line interface (PLANNED)
 └── contracts_sdk       # ⏳ Public Rust SDK (PLANNED)
@@ -128,16 +128,38 @@ sla:
 ```rust
 // Add to Cargo.toml:
 // contracts_parser = { path = "path/to/dce/contracts_parser" }
+// contracts_validator = { path = "path/to/dce/contracts_validator" }
 // contracts_core = { path = "path/to/dce/contracts_core" }
 
 use contracts_parser::parse_file;
+use contracts_validator::{DataValidator, DataSet, DataValue};
+use contracts_core::ValidationContext;
 use std::path::Path;
+use std::collections::HashMap;
 
 // Load and inspect a contract
 let contract = parse_file(Path::new("user_events.yml"))?;
 println!("Contract: {} v{}", contract.name, contract.version);
 println!("Owner: {}", contract.owner);
 println!("Fields: {}", contract.schema.fields.len());
+
+// Validate data against the contract
+let mut validator = DataValidator::new();
+let mut row = HashMap::new();
+row.insert("user_id".to_string(), DataValue::String("user123".to_string()));
+row.insert("event_type".to_string(), DataValue::String("click".to_string()));
+
+let dataset = DataSet::from_rows(vec![row]);
+let context = ValidationContext::new();
+let report = validator.validate_with_data(&contract, &dataset, &context);
+
+if report.passed {
+    println!("✓ Validation passed!");
+} else {
+    for error in &report.errors {
+        eprintln!("✗ {}", error);
+    }
+}
 ```
 
 ### CLI Commands (Coming in v0.0.1)
@@ -216,7 +238,7 @@ let json = serde_json::to_string_pretty(&contract).unwrap();
 println!("{}", json);
 ```
 
-**Note**: Actual data validation will be available in v0.0.1. Currently, you can only parse, build, and serialize contracts.
+**Note**: Data validation is now available! The validator supports schema validation, constraint checking (allowed values, ranges, patterns), and quality checks (completeness, uniqueness, freshness).
 
 ## Roadmap
 
@@ -226,7 +248,8 @@ println!("{}", json);
 - [x] Builder patterns and validators
 - [x] YAML/TOML parser implementation
 - [x] Comprehensive test suite (core + parser)
-- [ ] Apache Iceberg validator
+- [x] Generic validation engine (schema, constraints, quality checks)
+- [ ] Apache Iceberg integration
 - [ ] CLI basic commands
 
 ### Phase 2: Multi-Format
@@ -325,23 +348,24 @@ Built with:
 **Current Phase**: Phase 1 - Foundation
 
 **Progress Overview**:
-- ✅ **Complete** (2/5): contracts_core, contracts_parser
-- ⏳ **In Progress** (0/5): contracts_validator (next up)
-- ⏸️ **Planned** (3/5): contracts_iceberg, contracts_cli, contracts_sdk
+- ✅ **Complete** (3/5): contracts_core, contracts_parser, contracts_validator
+- ⏳ **In Progress** (0/5): contracts_iceberg (next up)
+- ⏸️ **Planned** (2/5): contracts_cli, contracts_sdk
 
-**Phase 1 Completion**: ~40% (2/5 core components)
+**Phase 1 Completion**: ~60% (3/5 core components)
 
 **Target for v0.0.1**:
-- Validation engine with schema and constraint checking
+- ✅ Validation engine with schema and constraint checking
 - Basic CLI with `validate` command
 - Iceberg table format support
 - End-to-end integration tests
 
 **Latest Updates**:
+- 2025-01: Validation engine complete (schema, constraints, quality checks)
+- 2025-01: Comprehensive test suite (109 tests, 100% passing)
 - 2025-01: Parser implementation complete (YAML/TOML support)
-- 2025-01: Comprehensive test suite (42 tests, 100% passing)
 - 2025-01: Core data structures fully tested and documented
 
-**Contributing**: We welcome contributors! The validator implementation is the next critical milestone. See open issues for details.
+**Contributing**: We welcome contributors! The Iceberg integration is the next critical milestone. See open issues for details.
 
 For questions or feedback, please [open an issue](https://github.com/yourusername/dce/issues/new).
