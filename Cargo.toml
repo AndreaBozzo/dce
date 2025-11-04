@@ -14,8 +14,8 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Data Contracts Engine Contributors"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/yourusername/dce"
-homepage = "https://github.com/yourusername/dce"
+repository = "https://github.com/AndreaBozzo/dce"
+homepage = "https://github.com/AndreaBozzo/dce"
 keywords = ["data-contracts", "data-engineering", "iceberg", "validation"]
 categories = ["data-structures", "development-tools"]
 
