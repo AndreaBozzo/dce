@@ -317,8 +317,8 @@ impl IcebergValidator {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_validator_config_file_io() {
+    #[tokio::test]
+    async fn test_validator_config_file_io() {
         let config = IcebergConfig::builder()
             .file_io()
             .namespace(vec!["test".to_string()])
@@ -327,8 +327,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(IcebergValidator::new(config.clone()));
+        let result = IcebergValidator::new(config.clone()).await;
 
         // This will succeed as FileIO doesn't require catalog connection
         assert!(result.is_ok());
@@ -344,8 +343,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_validator_config_rest() {
+    #[tokio::test]
+    async fn test_validator_config_rest() {
         let config = IcebergConfig::builder()
             .rest_catalog("http://localhost:8181", "s3://warehouse")
             .namespace(vec!["db".to_string()])
@@ -356,8 +355,7 @@ mod tests {
         let config = config.unwrap();
 
         // This will likely fail without a running REST catalog, which is expected
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(IcebergValidator::new(config));
+        let result = IcebergValidator::new(config).await;
 
         // We expect this to fail without actual catalog, but it tests the code path
         assert!(result.is_err() || result.is_ok());

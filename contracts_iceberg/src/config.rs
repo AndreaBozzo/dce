@@ -101,12 +101,14 @@ pub struct IcebergConfigBuilder {
 
 impl IcebergConfigBuilder {
     /// Sets the catalog type to FileIO (direct file access).
+    #[must_use]
     pub fn file_io(mut self) -> Self {
         self.catalog = Some(CatalogType::FileIO);
         self
     }
 
     /// Sets the catalog type to REST.
+    #[must_use]
     pub fn rest_catalog<S: Into<String>>(mut self, uri: S, warehouse: S) -> Self {
         self.catalog = Some(CatalogType::Rest {
             uri: uri.into(),
@@ -116,6 +118,7 @@ impl IcebergConfigBuilder {
     }
 
     /// Sets the catalog type to AWS Glue.
+    #[must_use]
     pub fn glue_catalog<S: Into<String>>(mut self, warehouse: S) -> Self {
         self.catalog = Some(CatalogType::Glue {
             warehouse: warehouse.into(),
@@ -126,6 +129,7 @@ impl IcebergConfigBuilder {
     }
 
     /// Sets the catalog type to AWS Glue with additional options.
+    #[must_use]
     pub fn glue_catalog_with_options<S: Into<String>>(
         mut self,
         warehouse: S,
@@ -141,6 +145,7 @@ impl IcebergConfigBuilder {
     }
 
     /// Sets the catalog type to Hive Metastore.
+    #[must_use]
     pub fn hms_catalog<S: Into<String>>(mut self, uri: S, warehouse: S) -> Self {
         self.catalog = Some(CatalogType::Hms {
             uri: uri.into(),
@@ -150,30 +155,35 @@ impl IcebergConfigBuilder {
     }
 
     /// Sets the catalog directly.
+    #[must_use]
     pub fn catalog(mut self, catalog: CatalogType) -> Self {
         self.catalog = Some(catalog);
         self
     }
 
     /// Sets the table namespace.
+    #[must_use]
     pub fn namespace(mut self, namespace: Vec<String>) -> Self {
         self.namespace = Some(namespace);
         self
     }
 
     /// Sets the table name.
+    #[must_use]
     pub fn table_name<S: Into<String>>(mut self, name: S) -> Self {
         self.table_name = Some(name.into());
         self
     }
 
     /// Adds a property to the configuration.
+    #[must_use]
     pub fn property<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
         self.properties.insert(key.into(), value.into());
         self
     }
 
     /// Sets multiple properties at once.
+    #[must_use]
     pub fn properties(mut self, properties: HashMap<String, String>) -> Self {
         self.properties = properties;
         self
