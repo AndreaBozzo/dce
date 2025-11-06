@@ -44,8 +44,6 @@ fn primitive_type_to_string(prim_type: &PrimitiveType) -> Result<String, Iceberg
 /// Converts an Arrow/Iceberg value to a DCE DataValue.
 ///
 /// This is used when reading actual data from Iceberg tables for validation.
-/// TODO: This will be used in the next iteration for data reading.
-#[allow(dead_code)]
 pub fn arrow_value_to_data_value(
     value: &arrow_array::array::ArrayRef,
     row_idx: usize,

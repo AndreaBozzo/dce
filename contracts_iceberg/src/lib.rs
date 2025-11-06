@@ -29,12 +29,13 @@
 
 use thiserror::Error;
 
+mod catalog;
 mod config;
 mod converter;
 mod schema;
 mod validator;
 
-pub use config::IcebergConfig;
+pub use config::{CatalogType, IcebergConfig};
 pub use validator::IcebergValidator;
 
 /// Error types specific to Iceberg operations.

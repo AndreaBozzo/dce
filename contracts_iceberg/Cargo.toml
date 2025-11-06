@@ -14,14 +14,19 @@ description = "Apache Iceberg integration for Data Contracts"
 contracts_core = { path = "../contracts_core" }
 contracts_validator = { path = "../contracts_validator" }
 iceberg = { workspace = true }
+iceberg-catalog-rest = "0.7"
+iceberg-catalog-glue = "0.7"
+iceberg-catalog-hms = "0.7"
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 chrono = { workspace = true }
-arrow-array = "57.0.0"
-arrow-schema = "57.0.0"
+arrow-array = "55.2.0"
+arrow-schema = "55.2.0"
+futures = "0.3"
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

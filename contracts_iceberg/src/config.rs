@@ -4,31 +4,56 @@ use crate::IcebergError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Type of Iceberg catalog to use.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum CatalogType {
+    /// Direct file-based access (no catalog)
+    FileIO,
+
+    /// REST catalog
+    Rest {
+        /// REST catalog URI (e.g., "http://localhost:8181")
+        uri: String,
+        /// Warehouse location
+        warehouse: String,
+    },
+
+    /// AWS Glue catalog
+    Glue {
+        /// Warehouse location (typically S3)
+        warehouse: String,
+        /// Optional Glue catalog ID
+        catalog_id: Option<String>,
+        /// Optional AWS region
+        region: Option<String>,
+    },
+
+    /// Hive Metastore catalog
+    Hms {
+        /// Hive Metastore URI (e.g., "127.0.0.1:9083")
+        uri: String,
+        /// Warehouse location
+        warehouse: String,
+    },
+}
+
 /// Configuration for connecting to an Apache Iceberg table.
 ///
 /// Supports various catalog types (REST, Hive, AWS Glue, etc.) and storage backends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IcebergConfig {
-    /// Location of the Iceberg table (e.g., "s3://bucket/path/to/table")
-    pub table_location: String,
+    /// Catalog configuration
+    pub catalog: CatalogType,
 
-    /// Optional catalog type (rest, hive, glue, etc.)
-    pub catalog_type: Option<String>,
+    /// Table namespace (e.g., ["database", "schema"])
+    pub namespace: Vec<String>,
 
-    /// Optional catalog URI
-    pub catalog_uri: Option<String>,
-
-    /// Optional warehouse location
-    pub warehouse: Option<String>,
+    /// Table name
+    pub table_name: String,
 
     /// Additional properties for catalog configuration
     pub properties: HashMap<String, String>,
-
-    /// Optional table namespace (for catalogs that require it)
-    pub namespace: Option<Vec<String>>,
-
-    /// Optional table name (if different from location)
-    pub table_name: Option<String>,
 }
 
 impl IcebergConfig {
@@ -39,62 +64,94 @@ impl IcebergConfig {
 
     /// Validates the configuration.
     pub fn validate(&self) -> Result<(), IcebergError> {
-        if self.table_location.is_empty() {
+        if self.table_name.is_empty() {
             return Err(IcebergError::ConfigurationError(
-                "table_location cannot be empty".to_string(),
+                "table_name cannot be empty".to_string(),
+            ));
+        }
+
+        if self.namespace.is_empty() {
+            return Err(IcebergError::ConfigurationError(
+                "namespace cannot be empty".to_string(),
             ));
         }
 
         Ok(())
+    }
+
+    /// Returns the warehouse location from the catalog configuration.
+    pub fn warehouse(&self) -> Option<&str> {
+        match &self.catalog {
+            CatalogType::FileIO => None,
+            CatalogType::Rest { warehouse, .. } => Some(warehouse),
+            CatalogType::Glue { warehouse, .. } => Some(warehouse),
+            CatalogType::Hms { warehouse, .. } => Some(warehouse),
+        }
     }
 }
 
 /// Builder for `IcebergConfig`.
 #[derive(Debug, Clone, Default)]
 pub struct IcebergConfigBuilder {
-    table_location: Option<String>,
-    catalog_type: Option<String>,
-    catalog_uri: Option<String>,
-    warehouse: Option<String>,
-    properties: HashMap<String, String>,
+    catalog: Option<CatalogType>,
     namespace: Option<Vec<String>>,
     table_name: Option<String>,
+    properties: HashMap<String, String>,
 }
 
 impl IcebergConfigBuilder {
-    /// Sets the table location.
-    pub fn table_location<S: Into<String>>(mut self, location: S) -> Self {
-        self.table_location = Some(location.into());
+    /// Sets the catalog type to FileIO (direct file access).
+    pub fn file_io(mut self) -> Self {
+        self.catalog = Some(CatalogType::FileIO);
         self
     }
 
-    /// Sets the catalog type.
-    pub fn catalog_type<S: Into<String>>(mut self, catalog_type: S) -> Self {
-        self.catalog_type = Some(catalog_type.into());
+    /// Sets the catalog type to REST.
+    pub fn rest_catalog<S: Into<String>>(mut self, uri: S, warehouse: S) -> Self {
+        self.catalog = Some(CatalogType::Rest {
+            uri: uri.into(),
+            warehouse: warehouse.into(),
+        });
         self
     }
 
-    /// Sets the catalog URI.
-    pub fn catalog_uri<S: Into<String>>(mut self, uri: S) -> Self {
-        self.catalog_uri = Some(uri.into());
+    /// Sets the catalog type to AWS Glue.
+    pub fn glue_catalog<S: Into<String>>(mut self, warehouse: S) -> Self {
+        self.catalog = Some(CatalogType::Glue {
+            warehouse: warehouse.into(),
+            catalog_id: None,
+            region: None,
+        });
         self
     }
 
-    /// Sets the warehouse location.
-    pub fn warehouse<S: Into<String>>(mut self, warehouse: S) -> Self {
-        self.warehouse = Some(warehouse.into());
+    /// Sets the catalog type to AWS Glue with additional options.
+    pub fn glue_catalog_with_options<S: Into<String>>(
+        mut self,
+        warehouse: S,
+        catalog_id: Option<String>,
+        region: Option<String>,
+    ) -> Self {
+        self.catalog = Some(CatalogType::Glue {
+            warehouse: warehouse.into(),
+            catalog_id,
+            region,
+        });
         self
     }
 
-    /// Adds a property to the configuration.
-    pub fn property<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
-        self.properties.insert(key.into(), value.into());
+    /// Sets the catalog type to Hive Metastore.
+    pub fn hms_catalog<S: Into<String>>(mut self, uri: S, warehouse: S) -> Self {
+        self.catalog = Some(CatalogType::Hms {
+            uri: uri.into(),
+            warehouse: warehouse.into(),
+        });
         self
     }
 
-    /// Sets multiple properties at once.
-    pub fn properties(mut self, properties: HashMap<String, String>) -> Self {
-        self.properties = properties;
+    /// Sets the catalog directly.
+    pub fn catalog(mut self, catalog: CatalogType) -> Self {
+        self.catalog = Some(catalog);
         self
     }
 
@@ -110,20 +167,33 @@ impl IcebergConfigBuilder {
         self
     }
 
+    /// Adds a property to the configuration.
+    pub fn property<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
+        self.properties.insert(key.into(), value.into());
+        self
+    }
+
+    /// Sets multiple properties at once.
+    pub fn properties(mut self, properties: HashMap<String, String>) -> Self {
+        self.properties = properties;
+        self
+    }
+
     /// Builds the `IcebergConfig`.
     ///
     /// Returns an error if required fields are missing.
     pub fn build(self) -> Result<IcebergConfig, IcebergError> {
         let config = IcebergConfig {
-            table_location: self.table_location.ok_or_else(|| {
-                IcebergError::ConfigurationError("table_location is required".to_string())
+            catalog: self.catalog.ok_or_else(|| {
+                IcebergError::ConfigurationError("catalog type is required".to_string())
             })?,
-            catalog_type: self.catalog_type,
-            catalog_uri: self.catalog_uri,
-            warehouse: self.warehouse,
+            namespace: self.namespace.ok_or_else(|| {
+                IcebergError::ConfigurationError("namespace is required".to_string())
+            })?,
+            table_name: self.table_name.ok_or_else(|| {
+                IcebergError::ConfigurationError("table_name is required".to_string())
+            })?,
             properties: self.properties,
-            namespace: self.namespace,
-            table_name: self.table_name,
         };
 
         config.validate()?;
@@ -136,21 +206,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_config_builder() {
+    fn test_config_builder_rest() {
         let config = IcebergConfig::builder()
-            .table_location("s3://bucket/table")
-            .catalog_type("rest")
-            .catalog_uri("http://localhost:8181")
-            .warehouse("s3://bucket/warehouse")
-            .property("io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+            .rest_catalog("http://localhost:8181", "s3://bucket/warehouse")
             .namespace(vec!["db".to_string(), "schema".to_string()])
             .table_name("my_table")
+            .property("io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
             .build();
 
         assert!(config.is_ok());
         let config = config.unwrap();
-        assert_eq!(config.table_location, "s3://bucket/table");
-        assert_eq!(config.catalog_type, Some("rest".to_string()));
+        assert_eq!(config.table_name, "my_table");
+        assert_eq!(config.namespace, vec!["db".to_string(), "schema".to_string()]);
+        assert!(matches!(config.catalog, CatalogType::Rest { .. }));
         assert_eq!(
             config.properties.get("io-impl").unwrap(),
             "org.apache.iceberg.aws.s3.S3FileIO"
@@ -158,8 +226,52 @@ mod tests {
     }
 
     #[test]
-    fn test_config_missing_location() {
-        let result = IcebergConfig::builder().build();
+    fn test_config_builder_glue() {
+        let config = IcebergConfig::builder()
+            .glue_catalog("s3://bucket/warehouse")
+            .namespace(vec!["database".to_string()])
+            .table_name("events")
+            .build();
+
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert!(matches!(config.catalog, CatalogType::Glue { .. }));
+        assert_eq!(config.warehouse(), Some("s3://bucket/warehouse"));
+    }
+
+    #[test]
+    fn test_config_builder_hms() {
+        let config = IcebergConfig::builder()
+            .hms_catalog("127.0.0.1:9083", "s3://bucket/warehouse")
+            .namespace(vec!["db".to_string()])
+            .table_name("users")
+            .build();
+
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert!(matches!(config.catalog, CatalogType::Hms { .. }));
+    }
+
+    #[test]
+    fn test_config_builder_file_io() {
+        let config = IcebergConfig::builder()
+            .file_io()
+            .namespace(vec!["local".to_string()])
+            .table_name("test_table")
+            .build();
+
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert!(matches!(config.catalog, CatalogType::FileIO));
+        assert_eq!(config.warehouse(), None);
+    }
+
+    #[test]
+    fn test_config_missing_catalog() {
+        let result = IcebergConfig::builder()
+            .namespace(vec!["db".to_string()])
+            .table_name("table")
+            .build();
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -168,21 +280,42 @@ mod tests {
     }
 
     #[test]
-    fn test_config_empty_location() {
-        let result = IcebergConfig::builder().table_location("").build();
+    fn test_config_missing_namespace() {
+        let result = IcebergConfig::builder()
+            .file_io()
+            .table_name("table")
+            .build();
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_config_minimal() {
-        let config = IcebergConfig::builder()
-            .table_location("s3://bucket/table")
+    fn test_config_missing_table_name() {
+        let result = IcebergConfig::builder()
+            .file_io()
+            .namespace(vec!["db".to_string()])
             .build();
+        assert!(result.is_err());
+    }
 
-        assert!(config.is_ok());
-        let config = config.unwrap();
-        assert_eq!(config.table_location, "s3://bucket/table");
-        assert!(config.catalog_type.is_none());
-        assert!(config.properties.is_empty());
+    #[test]
+    fn test_config_empty_table_name() {
+        let result = IcebergConfig::builder()
+            .file_io()
+            .namespace(vec!["db".to_string()])
+            .table_name("")
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_catalog_type_serde() {
+        let catalog = CatalogType::Rest {
+            uri: "http://localhost:8181".to_string(),
+            warehouse: "s3://warehouse".to_string(),
+        };
+
+        let json = serde_json::to_string(&catalog).unwrap();
+        let deserialized: CatalogType = serde_json::from_str(&json).unwrap();
+        assert_eq!(catalog, deserialized);
     }
 }
