@@ -58,7 +58,7 @@ pub struct Contract {
 ///
 /// Defines the physical storage format and table format for the data.
 /// The engine can validate contracts against different formats.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DataFormat {
     /// Apache Iceberg table format
