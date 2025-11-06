@@ -8,11 +8,24 @@ use tracing::warn;
 /// Converts an Iceberg type to a DCE type string.
 ///
 /// Maps Iceberg's type system to the string-based type names used in DCE contracts.
+///
+/// # Known Limitations
+///
+/// Complex types (Struct, List, Map) are currently mapped to generic strings without
+/// preserving nested type information:
+/// - `Struct { field1: Int, field2: String }` → `"map"`
+/// - `List<Int>` → `"list"`
+/// - `Map<String, Int>` → `"map"`
+///
+/// This means nested structures and element types cannot be validated.
 pub fn iceberg_type_to_dce_type(iceberg_type: &IcebergType) -> Result<String, IcebergError> {
     match iceberg_type {
         IcebergType::Primitive(prim) => primitive_type_to_string(prim),
+        // TODO: Preserve nested structure information for Struct types
         IcebergType::Struct(_) => Ok("map".to_string()),
+        // TODO: Preserve element type information for List types
         IcebergType::List(_) => Ok("list".to_string()),
+        // TODO: Preserve key/value type information for Map types
         IcebergType::Map(_) => Ok("map".to_string()),
     }
 }
@@ -124,31 +137,140 @@ pub fn arrow_value_to_data_value(
                 })?;
             Ok(DataValue::String(array.value(row_idx).to_string()))
         }
-        arrow_schema::DataType::Timestamp(_, _) => {
-            let array = value
-                .as_any()
-                .downcast_ref::<TimestampMicrosecondArray>()
-                .ok_or_else(|| {
-                    IcebergError::TypeConversionError(
-                        "Failed to downcast to TimestampArray".to_string(),
-                    )
-                })?;
+        arrow_schema::DataType::Timestamp(unit, _) => {
+            use arrow_schema::TimeUnit;
 
-            // Convert timestamp to ISO 8601 string
-            let ts_value = array.value(row_idx);
-            let datetime = chrono::DateTime::from_timestamp(
-                ts_value / 1_000_000,
-                ((ts_value % 1_000_000) * 1000) as u32,
-            )
+            let datetime = match unit {
+                TimeUnit::Second => {
+                    let array = value
+                        .as_any()
+                        .downcast_ref::<TimestampSecondArray>()
+                        .ok_or_else(|| {
+                            IcebergError::TypeConversionError(
+                                "Failed to downcast to TimestampSecondArray".to_string(),
+                            )
+                        })?;
+                    let ts_value = array.value(row_idx);
+                    chrono::DateTime::from_timestamp(ts_value, 0)
+                }
+                TimeUnit::Millisecond => {
+                    let array = value
+                        .as_any()
+                        .downcast_ref::<TimestampMillisecondArray>()
+                        .ok_or_else(|| {
+                            IcebergError::TypeConversionError(
+                                "Failed to downcast to TimestampMillisecondArray".to_string(),
+                            )
+                        })?;
+                    let ts_value = array.value(row_idx);
+                    chrono::DateTime::from_timestamp(
+                        ts_value / 1_000,
+                        ((ts_value % 1_000) * 1_000_000) as u32,
+                    )
+                }
+                TimeUnit::Microsecond => {
+                    let array = value
+                        .as_any()
+                        .downcast_ref::<TimestampMicrosecondArray>()
+                        .ok_or_else(|| {
+                            IcebergError::TypeConversionError(
+                                "Failed to downcast to TimestampMicrosecondArray".to_string(),
+                            )
+                        })?;
+                    let ts_value = array.value(row_idx);
+                    chrono::DateTime::from_timestamp(
+                        ts_value / 1_000_000,
+                        ((ts_value % 1_000_000) * 1000) as u32,
+                    )
+                }
+                TimeUnit::Nanosecond => {
+                    let array = value
+                        .as_any()
+                        .downcast_ref::<TimestampNanosecondArray>()
+                        .ok_or_else(|| {
+                            IcebergError::TypeConversionError(
+                                "Failed to downcast to TimestampNanosecondArray".to_string(),
+                            )
+                        })?;
+                    let ts_value = array.value(row_idx);
+                    chrono::DateTime::from_timestamp(
+                        ts_value / 1_000_000_000,
+                        (ts_value % 1_000_000_000) as u32,
+                    )
+                }
+            }
             .ok_or_else(|| {
                 IcebergError::TypeConversionError("Invalid timestamp value".to_string())
             })?;
 
             Ok(DataValue::Timestamp(datetime.to_rfc3339()))
         }
-        arrow_schema::DataType::Date32 | arrow_schema::DataType::Date64 => {
-            // Convert date to string format
-            Ok(DataValue::String(format!("date_{}", row_idx)))
+        arrow_schema::DataType::Date32 => {
+            // Date32 is days since Unix epoch
+            let array = value
+                .as_any()
+                .downcast_ref::<Date32Array>()
+                .ok_or_else(|| {
+                    IcebergError::TypeConversionError(
+                        "Failed to downcast to Date32Array".to_string(),
+                    )
+                })?;
+            let days = array.value(row_idx);
+            let datetime =
+                chrono::DateTime::from_timestamp(days as i64 * 86400, 0).ok_or_else(|| {
+                    IcebergError::TypeConversionError("Invalid date value".to_string())
+                })?;
+            Ok(DataValue::String(datetime.format("%Y-%m-%d").to_string()))
+        }
+        arrow_schema::DataType::Date64 => {
+            // Date64 is milliseconds since Unix epoch
+            let array = value
+                .as_any()
+                .downcast_ref::<Date64Array>()
+                .ok_or_else(|| {
+                    IcebergError::TypeConversionError(
+                        "Failed to downcast to Date64Array".to_string(),
+                    )
+                })?;
+            let millis = array.value(row_idx);
+            let datetime =
+                chrono::DateTime::from_timestamp(millis / 1000, (millis % 1000) as u32 * 1_000_000)
+                    .ok_or_else(|| {
+                        IcebergError::TypeConversionError("Invalid date value".to_string())
+                    })?;
+            Ok(DataValue::String(datetime.format("%Y-%m-%d").to_string()))
+        }
+        arrow_schema::DataType::Decimal128(_precision, scale) => {
+            let array = value
+                .as_any()
+                .downcast_ref::<Decimal128Array>()
+                .ok_or_else(|| {
+                    IcebergError::TypeConversionError(
+                        "Failed to downcast to Decimal128Array".to_string(),
+                    )
+                })?;
+            let decimal_value = array.value(row_idx);
+            // Convert to float for validation purposes
+            let divisor = 10_i128.pow(*scale as u32);
+            let float_value = decimal_value as f64 / divisor as f64;
+            Ok(DataValue::Float(float_value))
+        }
+        arrow_schema::DataType::Decimal256(_precision, _scale) => {
+            let array = value
+                .as_any()
+                .downcast_ref::<Decimal256Array>()
+                .ok_or_else(|| {
+                    IcebergError::TypeConversionError(
+                        "Failed to downcast to Decimal256Array".to_string(),
+                    )
+                })?;
+            // Decimal256 values are represented as i256, convert to string for precision
+            let decimal_str = array.value_as_string(row_idx);
+            // Try to parse as float for validation
+            let float_value = decimal_str.parse::<f64>().map_err(|_| {
+                IcebergError::TypeConversionError("Failed to parse Decimal256 value".to_string())
+            })?;
+            Ok(DataValue::Float(float_value))
         }
         other => {
             warn!("Unsupported Arrow type for conversion: {:?}", other);

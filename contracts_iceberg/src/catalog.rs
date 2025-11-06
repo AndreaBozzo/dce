@@ -45,6 +45,14 @@ pub async fn load_catalog(config: &IcebergConfig) -> Result<Box<dyn Catalog>, Ic
 }
 
 /// Loads a FileIO-based catalog (direct metadata access).
+///
+/// # Known Limitations
+///
+/// FileIO catalog support is limited compared to other catalog types.
+/// It requires direct metadata file paths via the `metadata_location` property
+/// and does not support catalog-level operations like listing tables.
+///
+/// For production use, prefer REST, Glue, or HMS catalogs when possible.
 async fn load_file_io_catalog() -> Result<Box<dyn Catalog>, IcebergError> {
     info!("Initializing FileIO catalog for direct metadata access");
 

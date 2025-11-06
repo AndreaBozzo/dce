@@ -10,9 +10,11 @@
 //! use contracts_core::Contract;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! // Configure Iceberg connection
+//! // Configure Iceberg connection with REST catalog
 //! let config = IcebergConfig::builder()
-//!     .table_location("s3://bucket/path/to/table")
+//!     .rest_catalog("http://localhost:8181", "s3://warehouse")
+//!     .namespace(vec!["database".to_string()])
+//!     .table_name("events")
 //!     .build()?;
 //!
 //! // Create validator
@@ -21,8 +23,11 @@
 //! // Load contract
 //! // let contract = ...;
 //!
-//! // Validate table against contract
-//! // let report = validator.validate_table(&contract).await?;
+//! // Validate table against contract (reads 1000 rows by default)
+//! // let report = validator.validate_table(&contract, None).await?;
+//!
+//! // Or validate only schema (no data reading)
+//! // let report = validator.validate_schema_only(&contract).await?;
 //! # Ok(())
 //! # }
 //! ```
