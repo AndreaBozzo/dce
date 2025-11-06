@@ -80,26 +80,22 @@ impl IcebergValidator {
         } else {
             // For FileIO, we need a direct metadata file path
             // This should be provided in the properties
-            let metadata_path = self
-                .config
-                .properties
-                .get("metadata_location")
-                .ok_or_else(|| {
-                    IcebergError::ConfigurationError(
-                        "FileIO catalog requires 'metadata_location' property".to_string(),
-                    )
-                })?;
+            let metadata_path =
+                self.config
+                    .properties
+                    .get("metadata_location")
+                    .ok_or_else(|| {
+                        IcebergError::ConfigurationError(
+                            "FileIO catalog requires 'metadata_location' property".to_string(),
+                        )
+                    })?;
 
             info!("Loading table from metadata file: {}", metadata_path);
 
-            StaticTable::from_metadata_file(
-                metadata_path,
-                table_ident,
-                self.file_io.clone(),
-            )
-            .await
-            .map(|static_table| static_table.into_table())
-            .map_err(|e| IcebergError::TableNotFound(format!("Failed to load table: {}", e)))
+            StaticTable::from_metadata_file(metadata_path, table_ident, self.file_io.clone())
+                .await
+                .map(|static_table| static_table.into_table())
+                .map_err(|e| IcebergError::TableNotFound(format!("Failed to load table: {}", e)))
         }
     }
 
@@ -115,8 +111,21 @@ impl IcebergValidator {
         let location = self
             .config
             .warehouse()
-            .map(|w| format!("{}/{}/{}", w, self.config.namespace.join("."), self.config.table_name))
-            .unwrap_or_else(|| format!("{}.{}", self.config.namespace.join("."), self.config.table_name));
+            .map(|w| {
+                format!(
+                    "{}/{}/{}",
+                    w,
+                    self.config.namespace.join("."),
+                    self.config.table_name
+                )
+            })
+            .unwrap_or_else(|| {
+                format!(
+                    "{}.{}",
+                    self.config.namespace.join("."),
+                    self.config.table_name
+                )
+            });
 
         extract_schema_from_iceberg(iceberg_schema, &location)
     }
@@ -251,10 +260,9 @@ impl IcebergValidator {
             .map_err(|e| IcebergError::DataReadError(format!("Failed to build scan: {}", e)))?;
 
         // Convert to Arrow stream
-        let mut stream = scan
-            .to_arrow()
-            .await
-            .map_err(|e| IcebergError::DataReadError(format!("Failed to create arrow stream: {}", e)))?;
+        let mut stream = scan.to_arrow().await.map_err(|e| {
+            IcebergError::DataReadError(format!("Failed to create arrow stream: {}", e))
+        })?;
 
         debug!("Arrow stream created, reading record batches");
 

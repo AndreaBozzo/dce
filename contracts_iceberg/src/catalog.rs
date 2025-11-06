@@ -1,11 +1,16 @@
 //! Catalog loading and management for Iceberg tables.
 
-use crate::{config::{CatalogType, IcebergConfig}, IcebergError};
-use iceberg::{Catalog, CatalogBuilder, TableIdent};
+use crate::{
+    config::{CatalogType, IcebergConfig},
+    IcebergError,
+};
 use iceberg::io::{FileIO, FileIOBuilder};
+use iceberg::{Catalog, CatalogBuilder, TableIdent};
 use iceberg_catalog_glue::{GlueCatalogBuilder, GLUE_CATALOG_PROP_WAREHOUSE};
 use iceberg_catalog_hms::{HmsCatalogBuilder, HMS_CATALOG_PROP_URI, HMS_CATALOG_PROP_WAREHOUSE};
-use iceberg_catalog_rest::{RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE};
+use iceberg_catalog_rest::{
+    RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
+};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
@@ -24,7 +29,15 @@ pub async fn load_catalog(config: &IcebergConfig) -> Result<Box<dyn Catalog>, Ic
             warehouse,
             catalog_id,
             region,
-        } => load_glue_catalog(warehouse, catalog_id.as_deref(), region.as_deref(), &config.properties).await,
+        } => {
+            load_glue_catalog(
+                warehouse,
+                catalog_id.as_deref(),
+                region.as_deref(),
+                &config.properties,
+            )
+            .await
+        }
         CatalogType::Hms { uri, warehouse } => {
             load_hms_catalog(uri, warehouse, &config.properties).await
         }
@@ -55,7 +68,10 @@ async fn load_rest_catalog(
 
     let mut props = HashMap::new();
     props.insert(REST_CATALOG_PROP_URI.to_string(), uri.to_string());
-    props.insert(REST_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.to_string());
+    props.insert(
+        REST_CATALOG_PROP_WAREHOUSE.to_string(),
+        warehouse.to_string(),
+    );
 
     // Merge additional properties
     for (key, value) in properties {
@@ -84,7 +100,10 @@ async fn load_glue_catalog(
     info!("Loading AWS Glue catalog");
 
     let mut props = HashMap::new();
-    props.insert(GLUE_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.to_string());
+    props.insert(
+        GLUE_CATALOG_PROP_WAREHOUSE.to_string(),
+        warehouse.to_string(),
+    );
 
     // Add optional catalog ID
     if let Some(id) = catalog_id {
@@ -123,7 +142,10 @@ async fn load_hms_catalog(
 
     let mut props = HashMap::new();
     props.insert(HMS_CATALOG_PROP_URI.to_string(), uri.to_string());
-    props.insert(HMS_CATALOG_PROP_WAREHOUSE.to_string(), warehouse.to_string());
+    props.insert(
+        HMS_CATALOG_PROP_WAREHOUSE.to_string(),
+        warehouse.to_string(),
+    );
 
     // Merge additional properties
     for (key, value) in properties {
@@ -135,9 +157,7 @@ async fn load_hms_catalog(
     let catalog = HmsCatalogBuilder::default()
         .load("hms", props)
         .await
-        .map_err(|e| {
-            IcebergError::ConnectionError(format!("Failed to load HMS catalog: {}", e))
-        })?;
+        .map_err(|e| IcebergError::ConnectionError(format!("Failed to load HMS catalog: {}", e)))?;
 
     Ok(Box::new(catalog))
 }
@@ -150,9 +170,8 @@ pub fn create_table_ident(
     let mut parts = namespace.to_vec();
     parts.push(table_name.to_string());
 
-    TableIdent::from_strs(parts).map_err(|e| {
-        IcebergError::ConfigurationError(format!("Invalid table identifier: {}", e))
-    })
+    TableIdent::from_strs(parts)
+        .map_err(|e| IcebergError::ConfigurationError(format!("Invalid table identifier: {}", e)))
 }
 
 /// Builds a FileIO instance based on the warehouse location scheme.

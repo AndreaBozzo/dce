@@ -217,7 +217,10 @@ mod tests {
         assert!(config.is_ok());
         let config = config.unwrap();
         assert_eq!(config.table_name, "my_table");
-        assert_eq!(config.namespace, vec!["db".to_string(), "schema".to_string()]);
+        assert_eq!(
+            config.namespace,
+            vec!["db".to_string(), "schema".to_string()]
+        );
         assert!(matches!(config.catalog, CatalogType::Rest { .. }));
         assert_eq!(
             config.properties.get("io-impl").unwrap(),
