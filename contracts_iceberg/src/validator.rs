@@ -135,13 +135,13 @@ impl IcebergValidator {
     /// This method:
     /// 1. Loads the table and extracts its schema
     /// 2. Validates the schema matches the contract
-    /// 3. Reads sample data from the table
+    /// 3. Reads sample data from the table (if not schema-only mode)
     /// 4. Validates the data against contract constraints
     ///
     /// # Arguments
     ///
     /// * `contract` - The data contract to validate against
-    /// * `sample_size` - Optional number of rows to validate (default: 1000)
+    /// * `context` - Validation context with options (sample_size, schema_only, strict, etc.)
     ///
     /// # Errors
     ///
@@ -149,26 +149,28 @@ impl IcebergValidator {
     pub async fn validate_table(
         &self,
         contract: &Contract,
-        sample_size: Option<usize>,
+        context: &ValidationContext,
     ) -> Result<ValidationReport, IcebergError> {
         info!(
             "Validating Iceberg table against contract: {}",
             contract.name
         );
 
-        let sample_size = sample_size.unwrap_or(1000);
+        // Check if schema-only validation is requested
+        if context.schema_only {
+            return self.validate_schema_only(contract, context).await;
+        }
+
+        let sample_size = context.sample_size.unwrap_or(1000);
 
         // Read sample data from the table
         let dataset = self.read_sample_data(sample_size).await?;
 
         info!("Read {} rows for validation", dataset.len());
 
-        // Create validation context
-        let context = ValidationContext::new();
-
         // Validate contract with data from Iceberg table
         let mut validator = DataValidator::new();
-        let report = validator.validate_with_data(contract, &dataset, &context);
+        let report = validator.validate_with_data(contract, &dataset, context);
 
         if report.passed {
             info!(
@@ -195,6 +197,7 @@ impl IcebergValidator {
     /// # Arguments
     ///
     /// * `contract` - The data contract to validate against
+    /// * `context` - Validation context (schema_only flag is enforced to true)
     ///
     /// # Errors
     ///
@@ -202,22 +205,23 @@ impl IcebergValidator {
     pub async fn validate_schema_only(
         &self,
         contract: &Contract,
+        context: &ValidationContext,
     ) -> Result<ValidationReport, IcebergError> {
         info!(
             "Validating schema only for table against contract: {}",
             contract.name
         );
 
-        // Create validation context with schema-only mode
-        let mut context = ValidationContext::new();
-        context.schema_only = true;
+        // Ensure schema-only mode is set
+        let mut schema_context = context.clone();
+        schema_context.schema_only = true;
 
         // Use empty dataset for schema-only validation
         let dataset = DataSet::empty();
 
         // Validate contract
         let mut validator = DataValidator::new();
-        let report = validator.validate_with_data(contract, &dataset, &context);
+        let report = validator.validate_with_data(contract, &dataset, &schema_context);
 
         if report.passed {
             info!(

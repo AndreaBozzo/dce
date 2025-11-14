@@ -66,18 +66,44 @@ DCE currently provides a complete validation framework with the following capabi
 
 See [examples/contracts/user_events.yml](examples/contracts/user_events.yml) for a complete working example.
 
-### Coming in v0.0.1 Release
+### ✅ Just Completed (v0.0.1-pre)
 
-- **CLI Tool**: `dce validate`, `dce init`, `dce check` commands
-- **Integration Tests**: End-to-end workflow testing
-- **Documentation Polish**: Final review and examples
+**CLI Tool (IMPLEMENTED):**
+- ✅ `dce validate` - Validate contracts against Iceberg tables with full data validation
+- ✅ `dce init` - Generate contracts from existing Iceberg tables
+- ✅ `dce check` - Validate contract structure without data
+- ✅ Flags: `--schema-only`, `--sample-size`, `--strict`, `--owner`, `--description`
+- ✅ Environment-based configuration (REST_CATALOG_URI, WAREHOUSE)
+- ✅ Format dispatcher (Iceberg fully integrated, others schema-only)
+
+**Type System Improvements:**
+- ✅ Complex types support: `struct<>`, `list<>`, `map<>` with nested representation
+- ✅ Unified ValidationContext API across all validators
+- ✅ Real ValidationStats (fields_checked, constraints_evaluated)
+
+**Critical Bug Fixes:**
+- ✅ Init command table name extraction
+- ✅ Glue catalog configuration
+- ✅ Improved error messages with troubleshooting hints
+
+### Remaining for v0.0.1 Release
+
+- **Testing**: Integration tests with Docker-based Iceberg catalog
+- **Documentation**: Update examples with new CLI commands
+- **Polish**: Progress indicators, feature flag awareness in help
 
 ### Future Roadmap (Post v0.0.1)
 
-- **Multi-Format Support**: Delta Lake, Hudi, Parquet
-- **Python SDK**: PyO3-based bindings
-- **Git Integration**: Pre-commit hooks, GitHub Actions
-- **Advanced Features**: ML-powered drift detection, auto-generation
+**Phase 2 - Multi-Format & Language Support:**
+- **Multi-Format Support**: Delta Lake, Hudi, Parquet, CSV validation
+- **Python SDK**: PyO3-based bindings for Python integration
+- **Enhanced Complex Types**: Deep validation for nested structures
+
+**Phase 3 - Advanced Features:**
+- **Git Integration**: Pre-commit hooks, GitHub Actions workflows
+- **Schema Evolution**: Track and validate schema changes over time
+- **Partition Validation**: Validate partitioning strategies
+- **ML-Powered Features**: Drift detection, contract auto-generation from profiling
 
 ## Architecture
 
@@ -87,7 +113,7 @@ dce/
 ├── contracts_parser    # ✅ YAML/TOML contract parsing (COMPLETE)
 ├── contracts_validator # ✅ Validation engine (COMPLETE)
 ├── contracts_iceberg   # ✅ Apache Iceberg integration (COMPLETE - 100%)
-├── contracts_cli       # ⏳ Command-line interface (PLANNED)
+├── contracts_cli       # ✅ Command-line interface (IMPLEMENTED - v0.0.1-pre)
 └── contracts_sdk       # ⏳ Public Rust SDK (PLANNED)
 ```
 
@@ -193,26 +219,48 @@ if report.passed {
 }
 ```
 
-### CLI Commands (Coming in v0.0.1)
-
-The following commands are planned for the initial release:
+### CLI Commands (Available Now - v0.0.1-pre)
 
 ```bash
-# Validate contract against actual data
-dce validate user_events.yml
+# Build the CLI
+cargo build --release
+export PATH=$PATH:./target/release
 
-# Schema-only validation
-dce validate --schema-only user_events.yml
+# Check contract structure (fast, no data access)
+dce check examples/contracts/user_events.yml
+
+# Validate Iceberg table against contract
+# Requires: REST_CATALOG_URI and WAREHOUSE environment variables
+export REST_CATALOG_URI=http://localhost:8181
+export WAREHOUSE=s3://my-warehouse
+dce validate examples/contracts/user_events.yml
+
+# Schema-only validation (no data reading)
+dce validate --schema-only examples/contracts/user_events.yml
+
+# Full validation with custom sample size
+dce validate --sample-size 5000 examples/contracts/user_events.yml
+
+# Strict mode (warnings become errors)
+dce validate --strict examples/contracts/user_events.yml
 
 # Generate contract from existing Iceberg table
-dce init --from-iceberg s3://data/user_events
+dce init \
+  http://localhost:8181 \
+  --catalog rest \
+  --namespace analytics \
+  --table user_events \
+  --owner data-team \
+  --description "User interaction events" \
+  --output generated_contract.yml
 
-# Compare two contract versions
-dce diff old.yml new.yml
-
-# Check contract compatibility
-dce check user_events.yml
+# JSON output for CI/CD pipelines
+dce validate --format json user_events.yml
 ```
+
+**Environment Variables:**
+- `REST_CATALOG_URI` or `ICEBERG_REST_URI`: Iceberg REST catalog endpoint
+- `WAREHOUSE` or `ICEBERG_WAREHOUSE`: Warehouse location (e.g., s3://bucket/path)
 
 ### Rust SDK (Available Now)
 

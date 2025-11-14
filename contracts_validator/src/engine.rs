@@ -94,7 +94,7 @@ impl DataValidator {
 
         // If schema validation fails and strict mode, stop here
         if context.strict && !errors.is_empty() {
-            return self.build_report(errors, warnings, &dataset_to_validate, start);
+            return self.build_report(errors, warnings, contract, &dataset_to_validate, start);
         }
 
         // 2. Constraint validation
@@ -105,7 +105,7 @@ impl DataValidator {
 
         // Stop if in schema-only mode
         if context.schema_only {
-            return self.build_report(errors, warnings, &dataset_to_validate, start);
+            return self.build_report(errors, warnings, contract, &dataset_to_validate, start);
         }
 
         // 3. Quality checks
@@ -133,7 +133,7 @@ impl DataValidator {
             warnings.extend(custom_errors.iter().map(|e| e.to_string()));
         }
 
-        self.build_report(errors, warnings, &dataset_to_validate, start)
+        self.build_report(errors, warnings, contract, &dataset_to_validate, start)
     }
 
     /// Builds a validation report from collected errors and warnings.
@@ -141,10 +141,42 @@ impl DataValidator {
         &self,
         errors: Vec<String>,
         warnings: Vec<String>,
+        contract: &Contract,
         dataset: &DataSet,
         start: Instant,
     ) -> ValidationReport {
         let duration_ms = start.elapsed().as_millis() as u64;
+
+        // Count fields checked (number of fields in contract schema)
+        let fields_checked = contract.schema.fields.len();
+
+        // Count constraints evaluated across all fields
+        let constraints_evaluated: usize = contract
+            .schema
+            .fields
+            .iter()
+            .map(|field| field.constraints.as_ref().map(|c| c.len()).unwrap_or(0))
+            .sum();
+
+        // Add quality checks count if present
+        let quality_checks_count = if let Some(ref quality) = contract.quality_checks {
+            let mut count = 0;
+            if quality.completeness.is_some() {
+                count += 1;
+            }
+            if quality.uniqueness.is_some() {
+                count += 1;
+            }
+            if quality.freshness.is_some() {
+                count += 1;
+            }
+            if let Some(ref custom) = quality.custom_checks {
+                count += custom.len();
+            }
+            count
+        } else {
+            0
+        };
 
         ValidationReport {
             passed: errors.is_empty(),
@@ -152,8 +184,8 @@ impl DataValidator {
             warnings,
             stats: ValidationStats {
                 records_validated: dataset.len(),
-                fields_checked: 0, // Could be enhanced to count actual fields
-                constraints_evaluated: 0, // Could be enhanced to count constraints
+                fields_checked,
+                constraints_evaluated: constraints_evaluated + quality_checks_count,
                 duration_ms,
             },
         }

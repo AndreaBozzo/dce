@@ -9,24 +9,51 @@ use tracing::warn;
 ///
 /// Maps Iceberg's type system to the string-based type names used in DCE contracts.
 ///
-/// # Known Limitations
+/// # Intermediate Complex Type Support
 ///
-/// Complex types (Struct, List, Map) are currently mapped to generic strings without
-/// preserving nested type information:
-/// - `Struct { field1: Int, field2: String }` → `"map"`
-/// - `List<Int>` → `"list"`
-/// - `Map<String, Int>` → `"map"`
+/// Complex types are now represented with basic type information:
+/// - `Struct { field1: Int, field2: String }` → `"struct<field1:int32,field2:string>"`
+/// - `List<Int>` → `"list<int32>"`
+/// - `Map<String, Int>` → `"map<string,int32>"`
 ///
-/// This means nested structures and element types cannot be validated.
+/// ## Current Limitations
+///
+/// 1. **No Deep Validation**: Only the top-level type structure is validated
+/// 2. **No Nested Constraints**: Cannot apply field-level constraints to struct fields
+/// 3. **String Matching Only**: Types are compared as strings, not structurally
+/// 4. **No Optional Fields**: Struct fields cannot be marked as optional
+///
+/// These will be addressed in Phase 2 with a proper type system representation.
 pub fn iceberg_type_to_dce_type(iceberg_type: &IcebergType) -> Result<String, IcebergError> {
     match iceberg_type {
         IcebergType::Primitive(prim) => primitive_type_to_string(prim),
-        // TODO: Preserve nested structure information for Struct types
-        IcebergType::Struct(_) => Ok("map".to_string()),
-        // TODO: Preserve element type information for List types
-        IcebergType::List(_) => Ok("list".to_string()),
-        // TODO: Preserve key/value type information for Map types
-        IcebergType::Map(_) => Ok("map".to_string()),
+
+        IcebergType::Struct(struct_type) => {
+            // Format: struct<field1:type1,field2:type2,...>
+            let fields: Result<Vec<String>, IcebergError> = struct_type
+                .fields()
+                .iter()
+                .map(|field| {
+                    let field_type = iceberg_type_to_dce_type(&field.field_type)?;
+                    Ok(format!("{}:{}", field.name, field_type))
+                })
+                .collect();
+
+            Ok(format!("struct<{}>", fields?.join(",")))
+        }
+
+        IcebergType::List(list_type) => {
+            // Format: list<element_type>
+            let element_type = iceberg_type_to_dce_type(&list_type.element_field.field_type)?;
+            Ok(format!("list<{}>", element_type))
+        }
+
+        IcebergType::Map(map_type) => {
+            // Format: map<key_type,value_type>
+            let key_type = iceberg_type_to_dce_type(&map_type.key_field.field_type)?;
+            let value_type = iceberg_type_to_dce_type(&map_type.value_field.field_type)?;
+            Ok(format!("map<{},{}>", key_type, value_type))
+        }
     }
 }
 

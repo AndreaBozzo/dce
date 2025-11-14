@@ -28,6 +28,14 @@ enum Commands {
         #[arg(short, long)]
         strict: bool,
 
+        /// Validate schema only without reading data (faster)
+        #[arg(long)]
+        schema_only: bool,
+
+        /// Number of rows to sample for validation (default: 1000)
+        #[arg(long)]
+        sample_size: Option<usize>,
+
         /// Output format: text, json
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -63,6 +71,14 @@ enum Commands {
         /// Table name
         #[arg(short, long)]
         table: Option<String>,
+
+        /// Contract owner (defaults to "data-team")
+        #[arg(long)]
+        owner: Option<String>,
+
+        /// Contract description (auto-generated if not provided)
+        #[arg(long)]
+        description: Option<String>,
     },
 }
 
@@ -94,8 +110,12 @@ async fn main() -> Result<()> {
         Commands::Validate {
             contract,
             strict,
+            schema_only,
+            sample_size,
             format,
-        } => commands::validate::execute(&contract, strict, &format).await,
+        } => {
+            commands::validate::execute(&contract, strict, schema_only, sample_size, &format).await
+        }
 
         Commands::Check { contract, format } => commands::check::execute(&contract, &format).await,
 
@@ -105,6 +125,19 @@ async fn main() -> Result<()> {
             catalog,
             namespace,
             table,
-        } => commands::init::execute(&source, output.as_deref(), &catalog, namespace, table).await,
+            owner,
+            description,
+        } => {
+            commands::init::execute(
+                &source,
+                output.as_deref(),
+                &catalog,
+                namespace,
+                table,
+                owner,
+                description,
+            )
+            .await
+        }
     }
 }

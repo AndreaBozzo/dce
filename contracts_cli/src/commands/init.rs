@@ -13,11 +13,13 @@ pub async fn execute(
     catalog_type: &str,
     namespace: Option<String>,
     table: Option<String>,
+    owner: Option<String>,
+    description: Option<String>,
 ) -> Result<()> {
     info!("Initializing contract from Iceberg source: {}", source);
 
     // Parse catalog type and build config
-    let config = build_iceberg_config(source, catalog_type, namespace, table)?;
+    let config = build_iceberg_config(source, catalog_type, namespace.clone(), table.clone())?;
 
     output::print_info(&format!(
         "Connecting to Iceberg catalog: {:?}",
@@ -25,7 +27,7 @@ pub async fn execute(
     ));
 
     // Create validator and extract schema
-    let validator = IcebergValidator::new(config)
+    let validator = IcebergValidator::new(config.clone())
         .await
         .context("Failed to connect to Iceberg catalog")?;
 
@@ -40,16 +42,25 @@ pub async fn execute(
     ));
 
     // Build contract from extracted schema
-    let table_name = schema
-        .fields
-        .first()
-        .map(|f| f.name.as_str())
-        .unwrap_or("table");
+    // Use the actual table name from config, not from first field
+    let table_name = &config.table_name;
 
-    let mut builder = ContractBuilder::new(table_name, "data-team")
+    // Use provided owner or default to "data-team"
+    let owner_name = owner.as_deref().unwrap_or("data-team");
+
+    // Use provided description or generate a default one
+    let contract_description = description.unwrap_or_else(|| {
+        format!(
+            "Auto-generated contract from Iceberg table {}.{}",
+            namespace.as_ref().unwrap_or(&"default".to_string()),
+            table_name
+        )
+    });
+
+    let mut builder = ContractBuilder::new(table_name, owner_name)
         .version("1.0.0")
-        .description("Auto-generated contract from Iceberg table")
-        .location(source)
+        .description(&contract_description)
+        .location(&schema.location) // Use location from extracted schema
         .format(DataFormat::Iceberg);
 
     // Add all fields from schema
@@ -90,30 +101,57 @@ fn build_iceberg_config(
     let table_name = table.ok_or_else(|| anyhow!("Table name is required for Iceberg init"))?;
 
     let config = match catalog_type {
-        "rest" => IcebergConfig::builder()
-            .rest_catalog(source, "/warehouse")
-            .namespace(namespace_vec)
-            .table_name(&table_name)
-            .build()?,
+        "rest" => {
+            // For REST: source is the catalog URI, need warehouse from env or default
+            let warehouse = std::env::var("WAREHOUSE")
+                .or_else(|_| std::env::var("ICEBERG_WAREHOUSE"))
+                .unwrap_or_else(|_| "/warehouse".to_string());
+
+            IcebergConfig::builder()
+                .rest_catalog(source, &warehouse)
+                .namespace(namespace_vec)
+                .table_name(&table_name)
+                .build()?
+        }
 
         #[cfg(feature = "glue-catalog")]
-        "glue" => IcebergConfig::builder()
-            .glue_catalog(source)
-            .namespace(namespace_vec)
-            .table_name(&table_name)
-            .build()?,
+        "glue" => {
+            // For Glue: source should be the warehouse (S3 path)
+            IcebergConfig::builder()
+                .glue_catalog(source) // source is warehouse for Glue
+                .namespace(namespace_vec)
+                .table_name(&table_name)
+                .build()?
+        }
 
         #[cfg(feature = "hms-catalog")]
-        "hms" => IcebergConfig::builder()
-            .hms_catalog(source, "/warehouse")
-            .namespace(namespace_vec)
-            .table_name(&table_name)
-            .build()?,
+        "hms" => {
+            // For HMS: source is the HMS URI, need warehouse from env or default
+            let warehouse = std::env::var("WAREHOUSE")
+                .or_else(|_| std::env::var("ICEBERG_WAREHOUSE"))
+                .unwrap_or_else(|_| "/warehouse".to_string());
+
+            IcebergConfig::builder()
+                .hms_catalog(source, &warehouse)
+                .namespace(namespace_vec)
+                .table_name(&table_name)
+                .build()?
+        }
 
         _ => {
             return Err(anyhow!(
-                "Unsupported catalog type: {}. Supported types: rest, glue, hms",
-                catalog_type
+                "Unsupported catalog type: {}. Supported types: rest{}{}",
+                catalog_type,
+                if cfg!(feature = "glue-catalog") {
+                    ", glue"
+                } else {
+                    ""
+                },
+                if cfg!(feature = "hms-catalog") {
+                    ", hms"
+                } else {
+                    ""
+                }
             ))
         }
     };
