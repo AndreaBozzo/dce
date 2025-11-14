@@ -14,6 +14,13 @@ description = "CLI tool for Data Contracts Engine"
 name = "dce"
 path = "src/main.rs"
 
+[features]
+default = ["rest-catalog"]
+rest-catalog = ["contracts_iceberg/rest-catalog"]
+glue-catalog = ["contracts_iceberg/glue-catalog"]
+hms-catalog = ["contracts_iceberg/hms-catalog"]
+all-catalogs = ["contracts_iceberg/all-catalogs"]
+
 [dependencies]
 contracts_core = { path = "../contracts_core" }
 contracts_parser = { path = "../contracts_parser" }
@@ -26,3 +33,4 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }

@@ -1145,6 +1145,7 @@ dependencies = [
  "contracts_parser",
  "contracts_validator",
  "serde_json",
+ "serde_yaml_ng",
  "tokio",
  "tracing",
  "tracing-subscriber",
