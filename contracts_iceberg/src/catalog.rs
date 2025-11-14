@@ -34,11 +34,9 @@ pub async fn load_catalog(config: &IcebergConfig) -> Result<Box<dyn Catalog>, Ic
             load_rest_catalog(uri, warehouse, &config.properties).await
         }
         #[cfg(not(feature = "rest-catalog"))]
-        CatalogType::Rest { .. } => {
-            Err(IcebergError::UnsupportedOperation(
-                "REST catalog support not enabled. Enable the 'rest-catalog' feature.".to_string(),
-            ))
-        }
+        CatalogType::Rest { .. } => Err(IcebergError::UnsupportedOperation(
+            "REST catalog support not enabled. Enable the 'rest-catalog' feature.".to_string(),
+        )),
         #[cfg(feature = "glue-catalog")]
         CatalogType::Glue {
             warehouse,
@@ -54,21 +52,17 @@ pub async fn load_catalog(config: &IcebergConfig) -> Result<Box<dyn Catalog>, Ic
             .await
         }
         #[cfg(not(feature = "glue-catalog"))]
-        CatalogType::Glue { .. } => {
-            Err(IcebergError::UnsupportedOperation(
-                "Glue catalog support not enabled. Enable the 'glue-catalog' feature.".to_string(),
-            ))
-        }
+        CatalogType::Glue { .. } => Err(IcebergError::UnsupportedOperation(
+            "Glue catalog support not enabled. Enable the 'glue-catalog' feature.".to_string(),
+        )),
         #[cfg(feature = "hms-catalog")]
         CatalogType::Hms { uri, warehouse } => {
             load_hms_catalog(uri, warehouse, &config.properties).await
         }
         #[cfg(not(feature = "hms-catalog"))]
-        CatalogType::Hms { .. } => {
-            Err(IcebergError::UnsupportedOperation(
-                "HMS catalog support not enabled. Enable the 'hms-catalog' feature.".to_string(),
-            ))
-        }
+        CatalogType::Hms { .. } => Err(IcebergError::UnsupportedOperation(
+            "HMS catalog support not enabled. Enable the 'hms-catalog' feature.".to_string(),
+        )),
     }
 }
 
