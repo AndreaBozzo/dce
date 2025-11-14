@@ -1,148 +1,39 @@
 # Data Contracts Engine (DCE)
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-pre--release-orange.svg)](https://github.com/AndreaBozzo/dce)
-[![Phase](https://img.shields.io/badge/phase-1%20foundation-blue.svg)](#roadmap)
+[![Status](https://img.shields.io/badge/status-v0.0.1--pre-orange.svg)](https://github.com/AndreaBozzo/dce)
 
-> **Note**: This project is in active development. v0.0.1 will be released upon Phase 1 completion.
-> **Currently Available**: Core types, YAML/TOML parsing, validation engine, programmatic contract building
-> **Coming in v0.0.1**: CLI commands, Iceberg integration
+A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple table formats.
 
-A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple formats and cloud providers.
-
-## Origin Story
-
-DCE evolves from [dataprof](https://github.com/AndreaBozzo/dataprof), a fast data quality assessment tool built in Rust. While dataprof excels at profiling and analyzing existing datasets (completeness, consistency, uniqueness, accuracy, timeliness), DCE shifts the paradigm toward **proactive data contracts**—defining, validating, and enforcing quality expectations *before* data enters your platform. Think of dataprof as the diagnostic tool and DCE as the preventive framework that ensures data quality from the outset.
-
-### From Assessment to Contracts: The Evolution
-
-| Aspect | dataprof | DCE |
-|--------|----------|-----|
-| **Purpose** | Analyze & profile existing data | Define & enforce data contracts |
-| **Approach** | Reactive (diagnose issues) | Proactive (prevent issues) |
-| **Use Case** | "What's wrong with my data?" | "Does my data meet the contract?" |
-| **Output** | Quality reports & visualizations | Validation pass/fail with detailed errors |
-| **Integration** | CLI, Python bindings, GitHub Actions | Rust SDK, CLI (planned), multiple formats |
-| **Focus** | Data assessment & profiling | Contract validation & enforcement |
-
-Both tools share Rust's performance benefits (memory efficiency, speed, safety), but serve complementary roles in a data quality strategy: dataprof helps you understand your data, DCE helps you control it.
-
-## Overview
-
-Data Contracts Engine provides a universal framework for defining and validating data contracts, ensuring data quality and compliance across your entire data platform. Unlike vendor-specific solutions, DCE is cloud-agnostic and supports multiple table formats.
-
-### What's Available Now (v0.0.1-dev)
-
-DCE currently provides a complete validation framework with the following capabilities:
-
-**Core Features:**
-- **Type-Safe Contracts**: Rust-native data structures with full serde support
-- **YAML/TOML Parsing**: Load contracts from configuration files
-- **Builder Pattern API**: Ergonomic programmatic contract creation
-- **Validation Engine**: Schema, constraint, and quality checks validation
-- **Multiple Validation Modes**: Strict, non-strict, and schema-only validation
-- **Comprehensive Types**: Schema definitions, quality checks, SLA specifications, field constraints
-- **Serialization**: Export contracts to YAML/JSON for storage and versioning
-
-**Iceberg Integration (Complete!):**
-- **Full Catalog Support**: REST, AWS Glue, Hive Metastore catalogs
-- **Schema & Data Validation**: Extract schemas and validate data from Iceberg tables
-- **Type System**: Complete support for all Iceberg primitive types (dates, decimals, timestamps)
-- See [contracts_iceberg/README.md](contracts_iceberg/README.md) for detailed documentation
-
-**Quality Assurance:**
-- **Well-Tested**: 138+ tests covering core functionality, parsing, validation, and Iceberg
-- **Fully Documented**: Complete rustdoc with examples for all catalog types
-- **Production Ready**: Clean compilation, comprehensive error handling
-
-**You can currently:**
-1. Define contracts programmatically using the builder pattern API
-2. Parse YAML/TOML contract files into type-safe Rust structures
-3. Validate data against contracts (schema, constraints, quality checks)
-4. **Connect to Iceberg catalogs and validate tables** ([see Iceberg docs](contracts_iceberg/README.md))
-5. Serialize contracts back to YAML/JSON for storage
-6. Inspect contract metadata (schema, fields, quality checks, SLA)
-7. Run validation in multiple modes (strict, non-strict, schema-only)
-
-See [examples/contracts/user_events.yml](examples/contracts/user_events.yml) for a complete working example.
-
-### ✅ Just Completed (v0.0.1-pre)
-
-**CLI Tool (IMPLEMENTED):**
-- ✅ `dce validate` - Validate contracts against Iceberg tables with full data validation
-- ✅ `dce init` - Generate contracts from existing Iceberg tables
-- ✅ `dce check` - Validate contract structure without data
-- ✅ Flags: `--schema-only`, `--sample-size`, `--strict`, `--owner`, `--description`
-- ✅ Environment-based configuration (REST_CATALOG_URI, WAREHOUSE)
-- ✅ Format dispatcher (Iceberg fully integrated, others schema-only)
-
-**Type System Improvements:**
-- ✅ Complex types support: `struct<>`, `list<>`, `map<>` with nested representation
-- ✅ Unified ValidationContext API across all validators
-- ✅ Real ValidationStats (fields_checked, constraints_evaluated)
-
-**Critical Bug Fixes:**
-- ✅ Init command table name extraction
-- ✅ Glue catalog configuration
-- ✅ Improved error messages with troubleshooting hints
-
-### Remaining for v0.0.1 Release
-
-- **Testing**: Integration tests with Docker-based Iceberg catalog
-- **Documentation**: Update examples with new CLI commands
-- **Polish**: Progress indicators, feature flag awareness in help
-
-### Future Roadmap (Post v0.0.1)
-
-**Phase 2 - Multi-Format & Language Support:**
-- **Multi-Format Support**: Delta Lake, Hudi, Parquet, CSV validation
-- **Python SDK**: PyO3-based bindings for Python integration
-- **Enhanced Complex Types**: Deep validation for nested structures
-
-**Phase 3 - Advanced Features:**
-- **Git Integration**: Pre-commit hooks, GitHub Actions workflows
-- **Schema Evolution**: Track and validate schema changes over time
-- **Partition Validation**: Validate partitioning strategies
-- **ML-Powered Features**: Drift detection, contract auto-generation from profiling
-
-## Architecture
-
-```
-dce/
-├── contracts_core      # ✅ Core data structures and types (COMPLETE)
-├── contracts_parser    # ✅ YAML/TOML contract parsing (COMPLETE)
-├── contracts_validator # ✅ Validation engine (COMPLETE)
-├── contracts_iceberg   # ✅ Apache Iceberg integration (COMPLETE - 100%)
-├── contracts_cli       # ✅ Command-line interface (IMPLEMENTED - v0.0.1-pre)
-└── contracts_sdk       # ⏳ Public Rust SDK (PLANNED)
-```
+**Origin**: DCE evolves from [dataprof](https://github.com/AndreaBozzo/dataprof), shifting from reactive profiling to proactive contract enforcement.
 
 ## Quick Start
 
-### Current Usage (Development)
-
 ```bash
-# Clone and build
+# Install
 git clone https://github.com/AndreaBozzo/dce
 cd dce
-cargo build --workspace
+cargo build --release
+export PATH=$PATH:$(pwd)/target/release
 
-# Run tests to see it in action
-cargo test --workspace
+# Validate contract
+export REST_CATALOG_URI=http://localhost:8181
+export WAREHOUSE=s3://my-warehouse
+dce validate contract.yml
 
-# Generate documentation
-cargo doc --open --no-deps
+# Generate contract from table
+dce init http://localhost:8181 --catalog rest --namespace db --table events -o contract.yml
+
+# Check syntax
+dce check contract.yml
 ```
 
-### Define a Contract
-
-Create a contract file `user_events.yml`:
+## Contract Example
 
 ```yaml
 version: "1.0.0"
 name: user_events
 owner: analytics-team
-description: User interaction events dataset
 
 schema:
   format: iceberg
@@ -151,382 +42,134 @@ schema:
     - name: user_id
       type: string
       nullable: false
-      description: Unique user identifier
-
     - name: event_type
       type: string
-      nullable: false
       constraints:
         - type: allowedvalues
           values: [click, view, purchase]
 
-    - name: timestamp
-      type: timestamp
-      nullable: false
-
 quality_checks:
   completeness:
     threshold: 0.99
-    fields: [user_id, event_type, timestamp]
-
+    fields: [user_id, event_type]
   freshness:
     max_delay: 1h
     metric: timestamp
-
-sla:
-  availability: 0.999
-  response_time: 100ms
 ```
 
-### Using Contracts (Available Now)
+Full example: [examples/contracts/user_events.yml](examples/contracts/user_events.yml)
+
+## CLI Reference
+
+### validate
+```bash
+dce validate contract.yml                    # Full validation
+dce validate --schema-only contract.yml      # Fast, no data
+dce validate --sample-size 10000 contract.yml
+dce validate --strict contract.yml           # Warnings = errors
+dce validate --format json contract.yml      # CI/CD
+```
+
+### init
+```bash
+dce init <catalog-uri> \
+  --catalog rest \
+  --namespace analytics \
+  --table events \
+  --owner data-team \
+  --output contract.yml
+```
+
+### check
+```bash
+dce check contract.yml  # Syntax validation
+```
+
+**Environment Variables**:
+- `REST_CATALOG_URI` / `ICEBERG_REST_URI`: Catalog endpoint
+- `WAREHOUSE` / `ICEBERG_WAREHOUSE`: Warehouse location
+
+## Programmatic Usage
 
 ```rust
-// Add to Cargo.toml (development path dependencies):
-// contracts_parser = { path = "path/to/dce/contracts_parser" }
-// contracts_validator = { path = "path/to/dce/contracts_validator" }
-// contracts_core = { path = "path/to/dce/contracts_core" }
-//
-// Note: Will be available from crates.io after v0.0.1 release
-
 use contracts_parser::parse_file;
-use contracts_validator::{DataValidator, DataSet, DataValue};
-use contracts_core::ValidationContext;
-use std::path::Path;
-use std::collections::HashMap;
+use contracts_validator::{DataValidator, DataSet, ValidationContext};
 
-// Load and inspect a contract
-let contract = parse_file(Path::new("user_events.yml"))?;
-println!("Contract: {} v{}", contract.name, contract.version);
-println!("Owner: {}", contract.owner);
-println!("Fields: {}", contract.schema.fields.len());
-
-// Validate data against the contract
-let mut validator = DataValidator::new();
-let mut row = HashMap::new();
-row.insert("user_id".to_string(), DataValue::String("user123".to_string()));
-row.insert("event_type".to_string(), DataValue::String("click".to_string()));
-
-let dataset = DataSet::from_rows(vec![row]);
+let contract = parse_file("contract.yml")?;
+let validator = DataValidator::new();
+let dataset = DataSet::from_rows(vec![/* data */]);
 let context = ValidationContext::new();
-let report = validator.validate_with_data(&contract, &dataset, &context);
 
-if report.passed {
-    println!("✓ Validation passed!");
-} else {
-    for error in &report.errors {
+let report = validator.validate_with_data(&contract, &dataset, &context);
+if !report.passed {
+    for error in report.errors {
         eprintln!("✗ {}", error);
     }
 }
 ```
 
-### CLI Commands (Available Now - v0.0.1-pre)
+Iceberg: see [contracts_iceberg/README.md](contracts_iceberg/README.md)
 
-```bash
-# Build the CLI
-cargo build --release
-export PATH=$PATH:./target/release
+## Features
 
-# Check contract structure (fast, no data access)
-dce check examples/contracts/user_events.yml
-
-# Validate Iceberg table against contract
-# Requires: REST_CATALOG_URI and WAREHOUSE environment variables
-export REST_CATALOG_URI=http://localhost:8181
-export WAREHOUSE=s3://my-warehouse
-dce validate examples/contracts/user_events.yml
-
-# Schema-only validation (no data reading)
-dce validate --schema-only examples/contracts/user_events.yml
-
-# Full validation with custom sample size
-dce validate --sample-size 5000 examples/contracts/user_events.yml
-
-# Strict mode (warnings become errors)
-dce validate --strict examples/contracts/user_events.yml
-
-# Generate contract from existing Iceberg table
-dce init \
-  http://localhost:8181 \
-  --catalog rest \
-  --namespace analytics \
-  --table user_events \
-  --owner data-team \
-  --description "User interaction events" \
-  --output generated_contract.yml
-
-# JSON output for CI/CD pipelines
-dce validate --format json user_events.yml
-```
-
-**Environment Variables:**
-- `REST_CATALOG_URI` or `ICEBERG_REST_URI`: Iceberg REST catalog endpoint
-- `WAREHOUSE` or `ICEBERG_WAREHOUSE`: Warehouse location (e.g., s3://bucket/path)
-
-### Rust SDK (Available Now)
-
-```rust
-use contracts_core::{ContractBuilder, DataFormat, FieldBuilder, FieldConstraints};
-use contracts_parser::parse_file;
-use std::path::Path;
-
-// 1. Parse a contract from YAML/TOML
-let contract = parse_file(Path::new("examples/contracts/user_events.yml"))
-    .expect("Failed to parse contract");
-
-println!("Loaded: {} v{} (owner: {})",
-    contract.name, contract.version, contract.owner);
-println!("Schema: {} fields at {}",
-    contract.schema.fields.len(), contract.schema.location);
-
-// Access quality checks
-if let Some(qc) = &contract.quality_checks {
-    if let Some(c) = &qc.completeness {
-        println!("Completeness threshold: {}", c.threshold);
-    }
-}
-
-// 2. Build a contract programmatically
-let contract = ContractBuilder::new("user_events", "analytics-team")
-    .version("1.0.0")
-    .description("User interaction events")
-    .location("s3://data/user_events")
-    .format(DataFormat::Iceberg)
-    .field(
-        FieldBuilder::new("user_id", "string")
-            .nullable(false)
-            .description("Unique user identifier")
-            .tags(vec!["pii".to_string(), "primary_key".to_string()])
-            .build()
-    )
-    .field(
-        FieldBuilder::new("event_type", "string")
-            .nullable(false)
-            .constraint(FieldConstraints::AllowedValues {
-                values: vec!["click".to_string(), "view".to_string()],
-            })
-            .build()
-    )
-    .build();
-
-// 3. Serialize to YAML for storage/versioning
-let yaml = serde_yaml_ng::to_string(&contract).unwrap();
-println!("{}", yaml);
-
-// 4. Serialize to JSON for APIs
-let json = serde_json::to_string_pretty(&contract).unwrap();
-println!("{}", json);
-```
-
-**Note**: Data validation is now available! The validator supports schema validation, constraint checking (allowed values, ranges, patterns), and quality checks (completeness, uniqueness, freshness).
-
-### Using Iceberg Integration
-
-```rust
-use contracts_iceberg::{IcebergValidator, IcebergConfig};
-use contracts_core::ValidationContext;
-
-// Configure connection to Iceberg catalog
-let config = IcebergConfig::builder()
-    .rest_catalog("http://localhost:8181", "/warehouse")
-    .namespace(vec!["database".to_string()])
-    .table_name("events")
-    .build()?;
-
-// Create validator and validate table
-let validator = IcebergValidator::new(config).await?;
-let contract = parse_file(Path::new("my_contract.yml"))?;
-let context = ValidationContext::default();
-
-let report = validator.validate_table(&contract, &context).await?;
-if report.valid {
-    println!("✓ Validation passed!");
-}
-```
-
-**For complete Iceberg documentation**, including:
-- All catalog types (REST, AWS Glue, Hive Metastore)
-- Configuration examples
-- Supported data types
-- Known limitations
-
-See **[contracts_iceberg/README.md](contracts_iceberg/README.md)**
+- **Formats**: Apache Iceberg (REST, Glue, HMS catalogs)
+- **Validation**: Schema, constraints, quality checks, custom SQL
+- **Types**: All primitives + complex (struct, list, map)
+- **Modes**: Full data, schema-only, strict, sampled
+- **Output**: Text, JSON
 
 ## Roadmap
 
-### Phase 1: Foundation (75% Complete)
+### Phase 1: Foundation (85% Complete)
 - [x] Core data structures and types
-- [x] Workspace setup and architecture
-- [x] Builder patterns and validators
-- [x] YAML/TOML parser implementation
-- [x] Comprehensive test suite (138+ tests)
-- [x] Generic validation engine (schema, constraints, quality checks)
-- [x] Iceberg type conversion and schema extraction
-- [x] Iceberg configuration and error handling
-- [x] Iceberg catalog integration (REST, Glue, HMS, FileIO)
-- [x] Iceberg data reading and validation
-- [ ] CLI basic commands (`validate`, `init`, `check`)
-- [ ] Integration tests with local/mock Iceberg tables
-- [ ] Documentation & Polish
-- [ ] Release 0.0.1
+- [x] YAML/TOML parser
+- [x] Validation engine
+- [x] Iceberg integration (REST, Glue, HMS)
+- [x] CLI commands (validate, init, check)
+- [ ] Integration tests
+- [ ] v0.0.1 release
 
 ### Phase 2: Multi-Format
 - [ ] Delta Lake support
 - [ ] Apache Hudi support
+- [ ] Parquet/CSV validation
 - [ ] Python SDK
 - [ ] GitHub Actions integration
-- [ ] Pre-commit hooks
 
 ### Phase 3: Ecosystem
 - [ ] Great Expectations adapter
 - [ ] dbt integration
 - [ ] Apache Airflow operator
-- [ ] Spark connector
 
 ### Phase 4: Intelligence
-- [ ] Auto-contract generation from data
+- [ ] Auto-contract generation
 - [ ] ML-powered drift detection
-- [ ] Cost optimization recommendations
 - [ ] Contract registry service
 
-## Contributing
-
-We welcome contributions! Check our [issue tracker](https://github.com/AndreaBozzo/dce/issues) for open tasks and enhancement opportunities.
-
-### Development Setup
+## Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/AndreaBozzo/dce
-cd dce
-
-# Build the workspace
 cargo build --workspace
-
-# Run tests
 cargo test --workspace
-
-# Run clippy
 cargo clippy --workspace
-
-# Generate documentation
 cargo doc --workspace --no-deps --open
 ```
 
-### Low Memory Systems (<8GB RAM)
-
-If you're developing on a system with limited RAM, use these strategies to avoid compilation freezes:
-
-#### Memory-Saving Build Options
-
-```bash
-# 1. Limit parallel compilation jobs
-cargo build --jobs 1
-cargo test --jobs 1
-
-# 2. Test individual packages separately
-cargo test --package contracts_core --jobs 1
-cargo test --package contracts_parser --jobs 1
-cargo test --package contracts_validator --jobs 1
-
-# 3. Use minimal features for Iceberg (REST only, lightest catalog)
-cargo test --package contracts_iceberg --no-default-features --features rest-catalog --jobs 1
-
-# 4. Test with all catalogs (requires more memory)
-cargo test --package contracts_iceberg --features all-catalogs --jobs 1
-```
-
-#### Iceberg Catalog Features
-
-The `contracts_iceberg` crate supports optional catalog types to reduce memory usage:
-
-- `rest-catalog` - REST API catalog (default, lightest)
-- `glue-catalog` - AWS Glue Data Catalog
-- `hms-catalog` - Apache Hive Metastore
-- `all-catalogs` - Enable all catalog types
-
-```bash
-# Build with specific catalogs only
-cargo build --package contracts_iceberg --no-default-features --features "rest-catalog,glue-catalog"
-```
-
-#### Additional Tips
-
-- Close rust-analyzer or IDE temporarily during large builds
-- Run `cargo clean` periodically to remove old build artifacts
-- The workspace profile reduces debug symbols for dependencies to save memory
-- Consider using `cargo build --release` for final artifacts (slower but more optimized)
-
 ## Why DCE?
 
-**Note**: DCE is in early development. For production use today, consider mature alternatives like [Great Expectations](https://greatexpectations.io/), [Soda Core](https://www.soda.io/), or [dbt tests](https://docs.getdbt.com/docs/build/tests). DCE aims to differentiate through:
+**Performance**: Rust-native for high throughput, ~20x memory efficiency vs Python
+**Embeddable**: Single binary, no runtime dependencies
+**Cloud-Agnostic**: Works anywhere, not tied to specific platforms
+**Format-Aware**: Native Iceberg/Delta/Hudi support
 
-### vs. Python-Based Tools (Great Expectations, Soda)
-- **Performance**: Rust-native for high-throughput validation with minimal overhead
-- **Embeddable**: No Python runtime needed, can embed in Rust data pipelines
-- **Memory Efficient**: Suitable for resource-constrained environments (building on dataprof's 20x memory efficiency)
-- **Single Binary**: Zero dependencies deployment
-
-### vs. SQL-Based Tools (dbt tests)
-- **Pre-Ingestion**: Validate before data enters your warehouse
-- **Cloud-Agnostic**: Not tied to warehouse execution
-- **Format-Aware**: Native integration with Iceberg, Delta, Hudi table formats
-- **Schema Evolution**: Track contract changes alongside data changes
-
-### vs. Vendor Solutions
-- **Open Source**: Full transparency, community-driven development
-- **No Lock-in**: Works with any cloud provider or on-premises
-- **Git-Native**: Version contracts alongside code
-- **Extensible**: Plugin architecture for custom validators
-
-**Current Limitation**: DCE is not yet feature-complete. v0.0.1 will offer schema and constraint validation with Iceberg support, with advanced features (multi-format support, ML-powered detection) following in subsequent releases.
+**Note**: Early stage. For production today, see [Great Expectations](https://greatexpectations.io/) or [Soda](https://www.soda.io/).
 
 ## License
 
-This project is dual-licensed under:
+Dual-licensed: MIT or Apache 2.0
 
-- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-- Apache License 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+## Links
 
-You may choose either license for your use.
-
-## Community
-
-- [GitHub Discussions](https://github.com/AndreaBozzo/dce/discussions)
-- [Issue Tracker](https://github.com/AndreaBozzo/dce/issues)
-- [Contributing Guide](CONTRIBUTING.md) (coming soon)
-
-## Acknowledgments
-
-Built with:
-- [Apache Iceberg Rust](https://github.com/apache/iceberg-rust)
-- [Serde](https://serde.rs/)
-- [Clap](https://clap.rs/)
-
----
-
-## Development Status
-
-**Current Phase**: Phase 1 - Foundation (75% complete)
-
-**Component Status**:
-- ✅ **Complete**: contracts_core, contracts_parser, contracts_validator
-- ✅ **Complete**: contracts_iceberg (100% - full catalog, data reading, validation)
-- ⏳ **Next Up**: contracts_cli (command-line interface)
-- ⏸️ **Planned**: contracts_sdk (public API wrapper)
-
-**Latest Updates**:
-- **November 6, 2025**: 🎉 Iceberg integration complete! Full catalog support, type conversion (dates/decimals/timestamps), 43 tests. See [contracts_iceberg/README.md](contracts_iceberg/README.md)
-- **November 4, 2025**: Validation engine complete with comprehensive test suite (109 tests)
-- **November 1, 2025**: Parser implementation complete (YAML/TOML support)
-- **October 31, 2025**: Core data structures and workspace architecture established
-
-**What's Next for v0.0.1**:
-1. ~~Complete Iceberg integration~~ ✅ **DONE**
-2. CLI implementation with `validate`, `init`, and `check` commands
-3. Integration tests with local/mock Iceberg tables
-4. Usage examples for different catalog types
-5. First public release
-
-**Contributing**: We welcome contributors! Check our [issue tracker](https://github.com/AndreaBozzo/dce/issues) for opportunities to contribute.
-
-For questions or feedback, please [open an issue](https://github.com/AndreaBozzo/dce/issues/new).
+- [GitHub](https://github.com/AndreaBozzo/dce)
+- [Issues](https://github.com/AndreaBozzo/dce/issues)
+- [Iceberg Docs](contracts_iceberg/README.md)
