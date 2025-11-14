@@ -364,6 +364,50 @@ cargo clippy --workspace
 cargo doc --workspace --no-deps --open
 ```
 
+### Low Memory Systems (<8GB RAM)
+
+If you're developing on a system with limited RAM, use these strategies to avoid compilation freezes:
+
+#### Memory-Saving Build Options
+
+```bash
+# 1. Limit parallel compilation jobs
+cargo build --jobs 1
+cargo test --jobs 1
+
+# 2. Test individual packages separately
+cargo test --package contracts_core --jobs 1
+cargo test --package contracts_parser --jobs 1
+cargo test --package contracts_validator --jobs 1
+
+# 3. Use minimal features for Iceberg (REST only, lightest catalog)
+cargo test --package contracts_iceberg --no-default-features --features rest-catalog --jobs 1
+
+# 4. Test with all catalogs (requires more memory)
+cargo test --package contracts_iceberg --features all-catalogs --jobs 1
+```
+
+#### Iceberg Catalog Features
+
+The `contracts_iceberg` crate supports optional catalog types to reduce memory usage:
+
+- `rest-catalog` - REST API catalog (default, lightest)
+- `glue-catalog` - AWS Glue Data Catalog
+- `hms-catalog` - Apache Hive Metastore
+- `all-catalogs` - Enable all catalog types
+
+```bash
+# Build with specific catalogs only
+cargo build --package contracts_iceberg --no-default-features --features "rest-catalog,glue-catalog"
+```
+
+#### Additional Tips
+
+- Close rust-analyzer or IDE temporarily during large builds
+- Run `cargo clean` periodically to remove old build artifacts
+- The workspace profile reduces debug symbols for dependencies to save memory
+- Consider using `cargo build --release` for final artifacts (slower but more optimized)
+
 ## Why DCE?
 
 **Note**: DCE is in early development. For production use today, consider mature alternatives like [Great Expectations](https://greatexpectations.io/), [Soda Core](https://www.soda.io/), or [dbt tests](https://docs.getdbt.com/docs/build/tests). DCE aims to differentiate through:

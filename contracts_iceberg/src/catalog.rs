@@ -6,11 +6,18 @@ use crate::{
 };
 use iceberg::io::{FileIO, FileIOBuilder};
 use iceberg::{Catalog, CatalogBuilder, TableIdent};
+
+#[cfg(feature = "glue-catalog")]
 use iceberg_catalog_glue::{GlueCatalogBuilder, GLUE_CATALOG_PROP_WAREHOUSE};
+
+#[cfg(feature = "hms-catalog")]
 use iceberg_catalog_hms::{HmsCatalogBuilder, HMS_CATALOG_PROP_URI, HMS_CATALOG_PROP_WAREHOUSE};
+
+#[cfg(feature = "rest-catalog")]
 use iceberg_catalog_rest::{
     RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
 };
+
 use std::collections::HashMap;
 use tracing::{debug, info};
 
@@ -22,9 +29,17 @@ pub async fn load_catalog(config: &IcebergConfig) -> Result<Box<dyn Catalog>, Ic
 
     match &config.catalog {
         CatalogType::FileIO => load_file_io_catalog().await,
+        #[cfg(feature = "rest-catalog")]
         CatalogType::Rest { uri, warehouse } => {
             load_rest_catalog(uri, warehouse, &config.properties).await
         }
+        #[cfg(not(feature = "rest-catalog"))]
+        CatalogType::Rest { .. } => {
+            Err(IcebergError::UnsupportedOperation(
+                "REST catalog support not enabled. Enable the 'rest-catalog' feature.".to_string(),
+            ))
+        }
+        #[cfg(feature = "glue-catalog")]
         CatalogType::Glue {
             warehouse,
             catalog_id,
@@ -38,8 +53,21 @@ pub async fn load_catalog(config: &IcebergConfig) -> Result<Box<dyn Catalog>, Ic
             )
             .await
         }
+        #[cfg(not(feature = "glue-catalog"))]
+        CatalogType::Glue { .. } => {
+            Err(IcebergError::UnsupportedOperation(
+                "Glue catalog support not enabled. Enable the 'glue-catalog' feature.".to_string(),
+            ))
+        }
+        #[cfg(feature = "hms-catalog")]
         CatalogType::Hms { uri, warehouse } => {
             load_hms_catalog(uri, warehouse, &config.properties).await
+        }
+        #[cfg(not(feature = "hms-catalog"))]
+        CatalogType::Hms { .. } => {
+            Err(IcebergError::UnsupportedOperation(
+                "HMS catalog support not enabled. Enable the 'hms-catalog' feature.".to_string(),
+            ))
         }
     }
 }
@@ -67,6 +95,7 @@ async fn load_file_io_catalog() -> Result<Box<dyn Catalog>, IcebergError> {
 }
 
 /// Loads a REST catalog.
+#[cfg(feature = "rest-catalog")]
 async fn load_rest_catalog(
     uri: &str,
     warehouse: &str,
@@ -99,6 +128,7 @@ async fn load_rest_catalog(
 }
 
 /// Loads an AWS Glue catalog.
+#[cfg(feature = "glue-catalog")]
 async fn load_glue_catalog(
     warehouse: &str,
     catalog_id: Option<&str>,
@@ -141,6 +171,7 @@ async fn load_glue_catalog(
 }
 
 /// Loads a Hive Metastore catalog.
+#[cfg(feature = "hms-catalog")]
 async fn load_hms_catalog(
     uri: &str,
     warehouse: &str,

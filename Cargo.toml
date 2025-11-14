@@ -67,3 +67,21 @@ strip = true
 [profile.dev]
 opt-level = 0
 debug = true
+codegen-units = 256  # Maximize parallelism for faster dev builds
+incremental = true   # Enable incremental compilation
+
+# Reduce debug info for dependencies to save memory
+[profile.dev.package."*"]
+opt-level = 0
+debug = false  # Only line tables, not full debug info
+
+[profile.test]
+opt-level = 0
+debug = true
+codegen-units = 256  # Maximize parallelism for test builds
+incremental = true
+
+# Reduce debug info for dependencies during tests
+[profile.test.package."*"]
+opt-level = 0
+debug = false

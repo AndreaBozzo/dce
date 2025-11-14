@@ -10,13 +10,20 @@ keywords.workspace = true
 categories.workspace = true
 description = "Apache Iceberg integration for Data Contracts"
 
+[features]
+default = ["rest-catalog"]
+rest-catalog = ["dep:iceberg-catalog-rest"]
+glue-catalog = ["dep:iceberg-catalog-glue"]
+hms-catalog = ["dep:iceberg-catalog-hms"]
+all-catalogs = ["rest-catalog", "glue-catalog", "hms-catalog"]
+
 [dependencies]
 contracts_core = { path = "../contracts_core" }
 contracts_validator = { path = "../contracts_validator" }
 iceberg = { workspace = true }
-iceberg-catalog-rest = "0.7"
-iceberg-catalog-glue = "0.7"
-iceberg-catalog-hms = "0.7"
+iceberg-catalog-rest = { version = "0.7", optional = true }
+iceberg-catalog-glue = { version = "0.7", optional = true }
+iceberg-catalog-hms = { version = "0.7", optional = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
