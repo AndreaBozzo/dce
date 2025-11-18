@@ -45,7 +45,9 @@ pub async fn execute(
         DataFormat::Iceberg => {
             // In schema-only mode, skip catalog connection
             if schema_only {
-                output::print_info("Schema-only mode: validating contract structure without catalog");
+                output::print_info(
+                    "Schema-only mode: validating contract structure without catalog",
+                );
                 let dataset = DataSet::empty();
                 let mut validator = DataValidator::new();
                 validator.validate_with_data(&contract, &dataset, &context)
