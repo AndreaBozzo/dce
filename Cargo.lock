@@ -1161,7 +1161,7 @@ dependencies = [
 
 [[package]]
 name = "contracts_cli"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "contracts_core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "chrono",
  "iceberg",
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "contracts_iceberg"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -1220,7 +1220,7 @@ dependencies = [
 
 [[package]]
 name = "contracts_parser"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "contracts_core",
@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "contracts_sdk"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "contracts_core",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "contracts_validator"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "chrono",
