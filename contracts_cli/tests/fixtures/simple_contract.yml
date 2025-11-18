@@ -1,0 +1,15 @@
+version: "1.0.0"
+name: simple_test
+owner: test-team
+description: Simple contract for testing
+
+schema:
+  format: iceberg
+  location: s3://test/simple
+  fields:
+    - name: id
+      type: string
+      nullable: false
+    - name: value
+      type: int
+      nullable: true

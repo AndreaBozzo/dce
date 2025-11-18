@@ -1,0 +1,42 @@
+version: "1.0.0"
+name: quality_test
+owner: test-team
+description: Contract with quality checks
+
+schema:
+  format: iceberg
+  location: s3://test/quality
+  fields:
+    - name: user_id
+      type: string
+      nullable: false
+    - name: email
+      type: string
+      nullable: false
+      constraints:
+        - type: pattern
+          regex: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
+    - name: created_at
+      type: timestamp
+      nullable: false
+
+quality_checks:
+  completeness:
+    threshold: 0.95
+    fields:
+      - user_id
+      - email
+
+  uniqueness:
+    fields:
+      - user_id
+    scope: global
+
+  freshness:
+    max_delay: 24h
+    metric: created_at
+
+sla:
+  availability: 0.99
+  response_time: 500ms
+  penalties: SLA breach notification to data governance team

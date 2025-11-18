@@ -1,0 +1,18 @@
+version = "1.0.0"
+name = "toml_test"
+owner = "test-team"
+description = "TOML format contract for testing"
+
+[schema]
+format = "iceberg"
+location = "s3://test/toml"
+
+[[schema.fields]]
+name = "id"
+type = "string"
+nullable = false
+
+[[schema.fields]]
+name = "amount"
+type = "decimal"
+nullable = true

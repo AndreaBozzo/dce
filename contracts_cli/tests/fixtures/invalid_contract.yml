@@ -1,0 +1,7 @@
+version: "1.0.0"
+# Missing required 'name' field
+owner: test-team
+
+schema:
+  format: iceberg
+  location: s3://test/invalid
