@@ -43,8 +43,16 @@ pub async fn execute(
     // Dispatch to appropriate validator based on contract format
     let report = match contract.schema.format {
         DataFormat::Iceberg => {
-            output::print_info("Detected Iceberg format, connecting to catalog...");
-            validate_iceberg_table(&contract, &context).await?
+            // In schema-only mode, skip catalog connection
+            if schema_only {
+                output::print_info("Schema-only mode: validating contract structure without catalog");
+                let dataset = DataSet::empty();
+                let mut validator = DataValidator::new();
+                validator.validate_with_data(&contract, &dataset, &context)
+            } else {
+                output::print_info("Detected Iceberg format, connecting to catalog...");
+                validate_iceberg_table(&contract, &context).await?
+            }
         }
         _ => {
             // For other formats, fall back to schema-only validation for now

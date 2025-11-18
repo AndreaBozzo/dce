@@ -95,25 +95,25 @@ fn test_check_contract_schema_details() {
 
 #[test]
 fn test_validate_schema_only_mode() {
-    // Use Parquet format to avoid Iceberg catalog requirement
+    // Schema-only mode validates contract structure without connecting to catalog
     dce()
         .arg("validate")
         .arg("--schema-only")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success()
+        .stdout(predicate::str::contains("Schema-only mode"))
         .stdout(predicate::str::contains("validation").or(predicate::str::contains("Validation")))
         .stdout(predicate::str::contains("passed").or(predicate::str::contains("PASSED")));
 }
 
 #[test]
 fn test_validate_schema_only_with_quality_checks() {
-    // Note: Iceberg format requires catalog even for schema-only (known limitation)
-    // Use Parquet instead
+    // Schema-only mode works with Iceberg format without catalog
     dce()
         .arg("validate")
         .arg("--schema-only")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success();
 }
@@ -145,7 +145,7 @@ fn test_validate_json_output() {
         .arg("--schema-only")
         .arg("--format")
         .arg("json")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success()
         .get_output()
@@ -171,7 +171,7 @@ fn test_validate_text_output_default() {
     dce()
         .arg("validate")
         .arg("--schema-only")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success()
         .stdout(predicate::str::contains("validation").or(predicate::str::contains("Validation")));
@@ -184,7 +184,7 @@ fn test_validate_with_sample_size() {
         .arg("--schema-only")
         .arg("--sample-size")
         .arg("5000")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success();
 }
@@ -195,7 +195,7 @@ fn test_validate_strict_mode() {
         .arg("validate")
         .arg("--schema-only")
         .arg("--strict")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success();
 }
@@ -413,7 +413,7 @@ fn test_validate_all_output_modes() {
         .arg("--schema-only")
         .arg("--format")
         .arg("text")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success();
 
@@ -423,7 +423,7 @@ fn test_validate_all_output_modes() {
         .arg("--schema-only")
         .arg("--format")
         .arg("json")
-        .arg(fixture_path("parquet_contract.yml"))
+        .arg(fixture_path("simple_contract.yml"))
         .assert()
         .success();
 }
