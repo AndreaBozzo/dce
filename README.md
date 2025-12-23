@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.png" alt="DCE Logo" width="400">
+  <img src="docs/assets/logo.png" alt="DCE Logo" width="800">
 </p>
 
 # Data Contracts Engine (DCE)
