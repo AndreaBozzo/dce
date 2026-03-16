@@ -218,10 +218,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn make_row(pairs: Vec<(&str, DataValue)>) -> HashMap<String, DataValue> {
-        pairs
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect()
+        pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
     }
 
     // ---- NoOverlap ----
@@ -386,10 +383,7 @@ mod tests {
         let mut rows: Vec<_> = (0..9)
             .map(|_| make_row(vec![("label", DataValue::String("cat".into()))]))
             .collect();
-        rows.push(make_row(vec![(
-            "label",
-            DataValue::String("dog".into()),
-        )]));
+        rows.push(make_row(vec![("label", DataValue::String("dog".into()))]));
 
         let ds = DataSet::from_rows(rows);
         let v = MlValidator::new();
@@ -415,10 +409,7 @@ mod tests {
         let mut rows: Vec<_> = (0..9)
             .map(|_| make_row(vec![("label", DataValue::String("cat".into()))]))
             .collect();
-        rows.push(make_row(vec![(
-            "label",
-            DataValue::String("dog".into()),
-        )]));
+        rows.push(make_row(vec![("label", DataValue::String("dog".into()))]));
 
         let ds = DataSet::from_rows(rows);
         let v = MlValidator::new();

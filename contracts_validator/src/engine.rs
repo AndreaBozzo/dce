@@ -3,7 +3,9 @@
 //! This module provides the main `DataValidator` that orchestrates all validation
 //! checks including schema, constraints, quality checks, and custom validations.
 
-use crate::{ConstraintValidator, CustomValidator, DataSet, MlValidator, QualityValidator, SchemaValidator};
+use crate::{
+    ConstraintValidator, CustomValidator, DataSet, MlValidator, QualityValidator, SchemaValidator,
+};
 use contracts_core::{
     Contract, ContractValidator, ValidationContext, ValidationReport, ValidationStats,
 };
