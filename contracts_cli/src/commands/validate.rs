@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use contracts_core::{DataFormat, ValidationContext};
 use contracts_iceberg::{IcebergConfig, IcebergValidator};
 use contracts_parser::parse_file;

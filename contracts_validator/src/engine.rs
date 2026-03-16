@@ -3,7 +3,7 @@
 //! This module provides the main `DataValidator` that orchestrates all validation
 //! checks including schema, constraints, quality checks, and custom validations.
 
-use crate::{ConstraintValidator, CustomValidator, DataSet, QualityValidator, SchemaValidator};
+use crate::{ConstraintValidator, CustomValidator, DataSet, MlValidator, QualityValidator, SchemaValidator};
 use contracts_core::{
     Contract, ContractValidator, ValidationContext, ValidationReport, ValidationStats,
 };
@@ -42,6 +42,7 @@ pub struct DataValidator {
     constraint_validator: ConstraintValidator,
     quality_validator: QualityValidator,
     custom_validator: CustomValidator,
+    ml_validator: MlValidator,
 }
 
 impl DataValidator {
@@ -52,6 +53,7 @@ impl DataValidator {
             constraint_validator: ConstraintValidator::new(),
             quality_validator: QualityValidator::new(),
             custom_validator: CustomValidator::new(),
+            ml_validator: MlValidator::new(),
         }
     }
 
@@ -131,6 +133,18 @@ impl DataValidator {
             errors.extend(custom_errors.iter().map(|e| e.to_string()));
         } else {
             warnings.extend(custom_errors.iter().map(|e| e.to_string()));
+        }
+
+        // 5. ML-specific checks
+        if let Some(ref qc) = contract.quality_checks {
+            if let Some(ref ml) = qc.ml_checks {
+                let ml_errors = self.ml_validator.validate(ml, &dataset_to_validate);
+                if context.strict {
+                    errors.extend(ml_errors.iter().map(|e| e.to_string()));
+                } else {
+                    warnings.extend(ml_errors.iter().map(|e| e.to_string()));
+                }
+            }
         }
 
         self.build_report(errors, warnings, contract, &dataset_to_validate, start)
@@ -377,6 +391,7 @@ mod tests {
                 uniqueness: None,
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -414,6 +429,7 @@ mod tests {
                 uniqueness: None,
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -451,6 +467,7 @@ mod tests {
                 uniqueness: None,
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 

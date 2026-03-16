@@ -1,19 +1,19 @@
 //! Main Iceberg validator implementation.
 
 use crate::{
+    IcebergError,
     catalog::{build_file_io, create_table_ident, load_catalog},
     config::{CatalogType, IcebergConfig},
     converter::arrow_value_to_data_value,
     schema::extract_schema_from_iceberg,
-    IcebergError,
 };
 use contracts_core::{Contract, ValidationContext, ValidationReport};
 use contracts_validator::{DataSet, DataValidator};
 use futures::TryStreamExt;
 use iceberg::{
+    Catalog,
     io::FileIO,
     table::{StaticTable, Table},
-    Catalog,
 };
 use std::collections::HashMap;
 use tracing::{debug, info, warn};

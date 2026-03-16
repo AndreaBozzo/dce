@@ -99,6 +99,7 @@ fn create_user_events_contract() -> Contract {
                     severity: Some("error".to_string()),
                 },
             ]),
+            ml_checks: None,
         })
         .build()
 }
@@ -256,6 +257,7 @@ fn test_completeness_check() {
             uniqueness: None,
             freshness: None,
             custom_checks: None,
+            ml_checks: None,
         })
         .build();
 

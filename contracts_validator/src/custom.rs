@@ -166,7 +166,7 @@ fn parse_duration(duration_str: &str) -> Result<Duration, ValidationError> {
             return Err(ValidationError::InvalidDuration(format!(
                 "Unknown duration unit: {}",
                 unit
-            )))
+            )));
         }
     };
 
@@ -294,6 +294,7 @@ mod tests {
                     metric: "timestamp".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -332,6 +333,7 @@ mod tests {
                     metric: "timestamp".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -368,6 +370,7 @@ mod tests {
                     definition: "SELECT COUNT(*) FROM table".to_string(),
                     severity: Some("error".to_string()),
                 }]),
+                ml_checks: None,
             })
             .build();
 
@@ -396,6 +399,7 @@ mod tests {
                     definition: "".to_string(),
                     severity: Some("error".to_string()),
                 }]),
+                ml_checks: None,
             })
             .build();
 
@@ -506,6 +510,7 @@ mod tests {
                     metric: "timestamp".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -545,6 +550,7 @@ mod tests {
                     metric: "date".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 

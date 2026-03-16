@@ -35,16 +35,20 @@
 
 mod constraints;
 mod custom;
+mod datafusion_engine;
 mod dataset;
 mod engine;
 mod error;
+mod ml;
 mod quality;
 mod schema;
 
 pub use constraints::*;
 pub use custom::*;
+pub use datafusion_engine::*;
 pub use dataset::*;
 pub use engine::*;
 pub use error::*;
+pub use ml::*;
 pub use quality::*;
 pub use schema::*;

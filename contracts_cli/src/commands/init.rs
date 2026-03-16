@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use contracts_core::{ContractBuilder, DataFormat};
 use contracts_iceberg::{IcebergConfig, IcebergValidator};
 use std::fs::File;
@@ -152,7 +152,7 @@ fn build_iceberg_config(
                 } else {
                     ""
                 }
-            ))
+            ));
         }
     };
 

@@ -6,13 +6,13 @@ members = [
     "contracts_validator",
     "contracts_iceberg",
     "contracts_cli",
-    "contracts_sdk",
+    "contracts_sdk", "contracts-python",
 ]
 
 [workspace.package]
 version = "0.0.1"
-edition = "2021"
-authors = ["Data Contracts Engine Contributors"]
+edition = "2024"
+authors = ["Andrea Bozzo"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/AndreaBozzo/dce"
 homepage = "https://github.com/AndreaBozzo/dce"
@@ -22,38 +22,41 @@ categories = ["data-structures", "development-tools"]
 [workspace.dependencies]
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = "1.0.149"
 serde_yaml_ng = "0.10"
-toml = "0.9"
+toml = "0.9.8"
 
 # Error handling
-thiserror = "2.0"
-anyhow = "1.0"
+thiserror = "2.0.18"
+anyhow = "1.0.102"
 
 # Date/Time
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.44", features = ["serde"] }
 
 # Validation & Regex
-regex = "1.11"
+regex = "1.12.3"
 validator = "0.20"
 
 # CLI
-clap = { version = "4.5", features = ["derive", "cargo"] }
-colored = "3.0"
+clap = { version = "4.6.0", features = ["derive", "cargo"] }
+colored = "3.1.1"
 
 # Async runtime (for future use)
-tokio = { version = "1.35", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
+
+# DataFusion (SQL-based validation engine)
+datafusion = "52.3.0"
 
 # Iceberg support
-iceberg = "0.7"
+iceberg = "0.8.0"
 
 # Arrow (for Iceberg data processing)
-arrow-array = "55.2.0"
-arrow-schema = "55.2.0"
+arrow-array = "57.3.0"
+arrow-schema = "57.3.0"
 
 # Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 # Testing
 pretty_assertions = "1.4"

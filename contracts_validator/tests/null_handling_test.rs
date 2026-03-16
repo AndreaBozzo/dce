@@ -184,6 +184,7 @@ fn test_null_counted_in_completeness_check() {
             uniqueness: None,
             freshness: None,
             custom_checks: None,
+            ml_checks: None,
         })
         .build();
 
@@ -310,6 +311,7 @@ fn test_completeness_with_missing_vs_null() {
             uniqueness: None,
             freshness: None,
             custom_checks: None,
+            ml_checks: None,
         })
         .build();
 
@@ -363,6 +365,7 @@ fn test_strict_mode_with_null_violations() {
             uniqueness: None,
             freshness: None,
             custom_checks: None,
+            ml_checks: None,
         })
         .build();
 

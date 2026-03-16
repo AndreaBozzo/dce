@@ -201,6 +201,7 @@ mod tests {
                 uniqueness: None,
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -237,6 +238,7 @@ mod tests {
                 uniqueness: None,
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -274,6 +276,7 @@ mod tests {
                 }),
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -305,6 +308,7 @@ mod tests {
                 }),
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -346,6 +350,7 @@ mod tests {
                 }),
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -383,6 +388,7 @@ mod tests {
                 uniqueness: None,
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -408,6 +414,7 @@ mod tests {
                 uniqueness: None,
                 freshness: None,
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 

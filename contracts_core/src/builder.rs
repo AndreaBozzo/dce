@@ -5,7 +5,7 @@
 
 use crate::{
     CompletenessCheck, Contract, CustomCheck, DataFormat, Field, FieldConstraints, FreshnessCheck,
-    QualityChecks, Schema, UniquenessCheck, SLA,
+    MlChecks, QualityChecks, SLA, Schema, UniquenessCheck,
 };
 
 /// Builder for creating a `Contract`.
@@ -209,6 +209,7 @@ pub struct QualityChecksBuilder {
     uniqueness: Option<UniquenessCheck>,
     freshness: Option<FreshnessCheck>,
     custom_checks: Option<Vec<CustomCheck>>,
+    ml_checks: Option<MlChecks>,
 }
 
 impl QualityChecksBuilder {
@@ -241,6 +242,12 @@ impl QualityChecksBuilder {
         self
     }
 
+    /// Sets ML-specific checks.
+    pub fn ml_checks(mut self, ml: MlChecks) -> Self {
+        self.ml_checks = Some(ml);
+        self
+    }
+
     /// Builds the quality checks.
     pub fn build(self) -> QualityChecks {
         QualityChecks {
@@ -248,6 +255,7 @@ impl QualityChecksBuilder {
             uniqueness: self.uniqueness,
             freshness: self.freshness,
             custom_checks: self.custom_checks,
+            ml_checks: self.ml_checks,
         }
     }
 }
