@@ -117,10 +117,9 @@ impl MlValidator {
                 if train_max.as_ref().is_none_or(|cur| ts > *cur) {
                     train_max = Some(ts);
                 }
-            } else if split_val == check.test_split {
-                if test_min.as_ref().is_none_or(|cur| ts < *cur) {
-                    test_min = Some(ts);
-                }
+            } else if split_val == check.test_split && test_min.as_ref().is_none_or(|cur| ts < *cur)
+            {
+                test_min = Some(ts);
             }
         }
 
@@ -150,11 +149,11 @@ impl MlValidator {
         let mut total: usize = 0;
 
         for row in dataset.rows() {
-            if let Some(val) = row.get(&check.label_field) {
-                if !val.is_null() {
-                    *counts.entry(value_to_key(val)).or_default() += 1;
-                    total += 1;
-                }
+            if let Some(val) = row.get(&check.label_field)
+                && !val.is_null()
+            {
+                *counts.entry(value_to_key(val)).or_default() += 1;
+                total += 1;
             }
         }
 
@@ -176,15 +175,15 @@ impl MlValidator {
                 )));
             }
 
-            if let Some(min) = check.min_proportion {
-                if proportion < min {
-                    errors.push(ValidationError::quality_check(format!(
-                        "ClassBalance check failed: class '{}' has proportion {:.2}% < min {:.2}%",
-                        label,
-                        proportion * 100.0,
-                        min * 100.0,
-                    )));
-                }
+            if let Some(min) = check.min_proportion
+                && proportion < min
+            {
+                errors.push(ValidationError::quality_check(format!(
+                    "ClassBalance check failed: class '{}' has proportion {:.2}% < min {:.2}%",
+                    label,
+                    proportion * 100.0,
+                    min * 100.0,
+                )));
             }
         }
 

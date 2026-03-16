@@ -80,10 +80,10 @@ impl QualityValidator {
         let mut non_null_count = 0;
 
         for row in dataset.rows() {
-            if let Some(value) = row.get(field_name) {
-                if !value.is_null() {
-                    non_null_count += 1;
-                }
+            if let Some(value) = row.get(field_name)
+                && !value.is_null()
+            {
+                non_null_count += 1;
             }
             // Missing field counts as null
         }

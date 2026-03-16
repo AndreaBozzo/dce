@@ -138,14 +138,14 @@ impl DataValidator {
         }
 
         // 5. ML-specific checks
-        if let Some(ref qc) = contract.quality_checks {
-            if let Some(ref ml) = qc.ml_checks {
-                let ml_errors = self.ml_validator.validate(ml, &dataset_to_validate);
-                if context.strict {
-                    errors.extend(ml_errors.iter().map(|e| e.to_string()));
-                } else {
-                    warnings.extend(ml_errors.iter().map(|e| e.to_string()));
-                }
+        if let Some(ref qc) = contract.quality_checks
+            && let Some(ref ml) = qc.ml_checks
+        {
+            let ml_errors = self.ml_validator.validate(ml, &dataset_to_validate);
+            if context.strict {
+                errors.extend(ml_errors.iter().map(|e| e.to_string()));
+            } else {
+                warnings.extend(ml_errors.iter().map(|e| e.to_string()));
             }
         }
 

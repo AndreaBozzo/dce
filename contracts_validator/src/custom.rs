@@ -35,10 +35,10 @@ impl CustomValidator {
         }
 
         // Freshness check
-        if let Some(freshness) = &quality_checks.freshness {
-            if let Err(err) = self.validate_freshness(freshness, dataset) {
-                errors.push(err);
-            }
+        if let Some(freshness) = &quality_checks.freshness
+            && let Err(err) = self.validate_freshness(freshness, dataset)
+        {
+            errors.push(err);
         }
 
         // Custom checks - for now just validate syntax
@@ -62,16 +62,16 @@ impl CustomValidator {
         let mut most_recent: Option<DateTime<Utc>> = None;
 
         for row in dataset.rows() {
-            if let Some(value) = row.get(&check.metric) {
-                if let Some(ts_str) = value.as_timestamp() {
-                    match parse_timestamp(ts_str) {
-                        Ok(ts) => {
-                            if most_recent.is_none() || ts > most_recent.unwrap() {
-                                most_recent = Some(ts);
-                            }
+            if let Some(value) = row.get(&check.metric)
+                && let Some(ts_str) = value.as_timestamp()
+            {
+                match parse_timestamp(ts_str) {
+                    Ok(ts) => {
+                        if most_recent.is_none() || ts > most_recent.unwrap() {
+                            most_recent = Some(ts);
                         }
-                        Err(_) => continue, // Skip invalid timestamps
                     }
+                    Err(_) => continue, // Skip invalid timestamps
                 }
             }
         }
@@ -207,19 +207,21 @@ fn parse_timestamp(ts_str: &str) -> Result<DateTime<Utc>, ValidationError> {
 
     // Try common date-time formats without timezone
     // Format: YYYY-MM-DD HH:MM:SS
-    if ts_str.contains(' ') && ts_str.len() >= 19 {
-        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%d %H:%M:%S") {
-            return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
-        }
+    if ts_str.contains(' ')
+        && ts_str.len() >= 19
+        && let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%d %H:%M:%S")
+    {
+        return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
     }
 
     // Try date-only format (assume start of day UTC)
     // Format: YYYY-MM-DD
-    if ts_str.len() == 10 && ts_str.chars().filter(|c| *c == '-').count() == 2 {
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(ts_str, "%Y-%m-%d") {
-            let datetime = date.and_hms_opt(0, 0, 0).unwrap();
-            return Ok(DateTime::from_naive_utc_and_offset(datetime, Utc));
-        }
+    if ts_str.len() == 10
+        && ts_str.chars().filter(|c| *c == '-').count() == 2
+        && let Ok(date) = chrono::NaiveDate::parse_from_str(ts_str, "%Y-%m-%d")
+    {
+        let datetime = date.and_hms_opt(0, 0, 0).unwrap();
+        return Ok(DateTime::from_naive_utc_and_offset(datetime, Utc));
     }
 
     // Try standard DateTime<Utc> parsing as fallback

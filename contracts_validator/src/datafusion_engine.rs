@@ -110,13 +110,13 @@ impl DataFusionEngine {
                 "SELECT COUNT(*) AS cnt FROM data WHERE \"{}\" IS NULL",
                 field.name
             );
-            if let Ok(cnt) = self.count_query(ctx, &sql).await {
-                if cnt > 0 {
-                    errs.push(format!(
-                        "Field '{}' is null but nullability is not allowed ({cnt} row(s))",
-                        field.name
-                    ));
-                }
+            if let Ok(cnt) = self.count_query(ctx, &sql).await
+                && cnt > 0
+            {
+                errs.push(format!(
+                    "Field '{}' is null but nullability is not allowed ({cnt} row(s))",
+                    field.name
+                ));
             }
         }
         errs
@@ -266,28 +266,21 @@ impl DataFusionEngine {
                      CAST(COUNT(\"{field_name}\") AS DOUBLE) / CAST(COUNT(*) AS DOUBLE) AS ratio \
                  FROM data"
             );
-            if let Ok(batches) = ctx.sql(&sql).await.and_then(|df| {
-                // Collect synchronously via tokio (we are already inside an async fn)
-                Ok(df)
-            }) {
-                if let Ok(batches) = batches.collect().await {
-                    if let Some(batch) = batches.first() {
-                        if batch.num_rows() > 0 {
-                            let col = batch.column(0);
-                            if let Some(arr) =
-                                col.as_any().downcast_ref::<arrow_array::Float64Array>()
-                            {
-                                let ratio = arr.value(0);
-                                if ratio < check.threshold {
-                                    errs.push(format!(
-                                        "Quality check failed: Completeness check failed for field '{}': {:.2}% < {:.2}% (threshold)",
-                                        field_name,
-                                        ratio * 100.0,
-                                        check.threshold * 100.0
-                                    ));
-                                }
-                            }
-                        }
+            if let Ok(batches) = ctx.sql(&sql).await
+                && let Ok(batches) = batches.collect().await
+                && let Some(batch) = batches.first()
+                && batch.num_rows() > 0
+            {
+                let col = batch.column(0);
+                if let Some(arr) = col.as_any().downcast_ref::<arrow_array::Float64Array>() {
+                    let ratio = arr.value(0);
+                    if ratio < check.threshold {
+                        errs.push(format!(
+                            "Quality check failed: Completeness check failed for field '{}': {:.2}% < {:.2}% (threshold)",
+                            field_name,
+                            ratio * 100.0,
+                            check.threshold * 100.0
+                        ));
                     }
                 }
             }
