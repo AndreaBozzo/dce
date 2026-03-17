@@ -1,12 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "contracts_core",
-    "contracts_parser",
-    "contracts_validator",
-    "contracts_iceberg",
-    "contracts_cli",
-    "contracts_sdk", "contracts-python",
+    "crates/contracts_core",
+    "crates/contracts_parser",
+    "crates/contracts_validator",
+    "crates/contracts_iceberg",
+    "crates/contracts_cli",
+    "crates/contracts_sdk",
+    "crates/contracts-python",
 ]
 
 [workspace.package]

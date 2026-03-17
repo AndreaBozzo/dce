@@ -41,15 +41,16 @@ cargo doc --workspace --no-deps --open
 
 ```
 dce/
-├── contracts_core/      # Core types and traits
-├── contracts_parser/    # YAML/TOML parsing
-├── contracts_validator/ # Validation engine
-├── contracts_iceberg/   # Iceberg integration
-├── contracts_cli/       # CLI tool
-├── contracts_sdk/       # Public API
-├── docs/               # Documentation
-├── examples/           # Example contracts
-└── tests/              # Integration tests
+├── crates/
+│   ├── contracts_core/      # Core types and traits
+│   ├── contracts_parser/    # YAML/TOML parsing
+│   ├── contracts_validator/ # Validation engine
+│   ├── contracts_iceberg/   # Iceberg integration
+│   ├── contracts_cli/       # CLI tool
+│   ├── contracts_sdk/       # Public API
+│   └── contracts-python/    # Python bindings
+├── docs/                    # Documentation
+└── examples/                # Example contracts
 ```
 
 ## How to Contribute

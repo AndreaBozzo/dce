@@ -112,7 +112,7 @@ if !report.passed {
 }
 ```
 
-Iceberg: see [contracts_iceberg/README.md](contracts_iceberg/README.md)
+Iceberg: see [crates/contracts_iceberg/README.md](crates/contracts_iceberg/README.md)
 
 ## Features
 
@@ -133,7 +133,7 @@ Iceberg: see [contracts_iceberg/README.md](contracts_iceberg/README.md)
 ### Type Support
 - **Complex Types**: Nested structures (Struct, List, Map) are recognized but lose detailed type information during validation
 - All primitive types (string, int, long, float, double, decimal, boolean, date, time, timestamp, uuid, binary) are fully supported
-- See [Iceberg README](contracts_iceberg/README.md) for detailed limitations
+- See [Iceberg README](crates/contracts_iceberg/README.md) for detailed limitations
 
 ### Quality Checks
 - **Custom SQL**: Framework exists with syntax validation; SQL execution with DataFusion planned for v0.1.0
@@ -204,4 +204,4 @@ Dual-licensed: MIT or Apache 2.0
 
 - [GitHub](https://github.com/AndreaBozzo/dce)
 - [Issues](https://github.com/AndreaBozzo/dce/issues)
-- [Iceberg Docs](contracts_iceberg/README.md)
+- [Iceberg Docs](crates/contracts_iceberg/README.md)

@@ -74,12 +74,13 @@ We adopt a Cargo workspace with the following crates:
 ```toml
 [workspace]
 members = [
-    "contracts_core",
-    "contracts_parser",
-    "contracts_validator",
-    "contracts_iceberg",
-    "contracts_cli",
-    "contracts_sdk",
+   "crates/contracts_core",
+   "crates/contracts_parser",
+   "crates/contracts_validator",
+   "crates/contracts_iceberg",
+   "crates/contracts_cli",
+   "crates/contracts_sdk",
+   "crates/contracts-python",
 ]
 ```
 
@@ -101,4 +102,4 @@ Shared dependencies managed at workspace level:
 
 - Add `contracts_delta` for Delta Lake support
 - Add `contracts_hudi` for Apache Hudi support
-- Consider `contracts_python` for Python bindings (PyO3)
+- Expand `contracts-python` for Python bindings (PyO3)
