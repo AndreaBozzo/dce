@@ -309,6 +309,26 @@ impl DataValidator {
             if let Some(ref custom) = quality.custom_checks {
                 count += custom.len();
             }
+            if let Some(ref ml) = quality.ml_checks {
+                if ml.no_overlap.is_some() {
+                    count += 1;
+                }
+                if ml.temporal_split.is_some() {
+                    count += 1;
+                }
+                if ml.class_balance.is_some() {
+                    count += 1;
+                }
+                if ml.feature_drift.is_some() {
+                    count += 1;
+                }
+                if ml.target_leakage.is_some() {
+                    count += 1;
+                }
+                if ml.null_rate_by_group.is_some() {
+                    count += 1;
+                }
+            }
             count
         } else {
             0

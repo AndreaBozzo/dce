@@ -12,6 +12,15 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+/// Global Tokio runtime shared across all Python function calls.
+/// Avoids the overhead of creating a new runtime per invocation and
+/// prevents conflicts with existing runtimes in the process.
+fn tokio_runtime() -> &'static tokio::runtime::Runtime {
+    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RT.get_or_init(|| tokio::runtime::Runtime::new().expect("failed to create Tokio runtime"))
+}
 
 /// Convert an Arrow RecordBatch into a DCE DataSet.
 fn record_batch_to_dataset(batch: &RecordBatch) -> PyResult<DataSet> {
@@ -228,13 +237,12 @@ fn report_to_pydict<'py>(
         .iter()
         .chain(report.warnings.iter())
         .filter(|e| {
-            e.contains("ML check failed")
-                || e.contains("overlap")
-                || e.contains("temporal")
-                || e.contains("class balance")
-                || e.contains("drift")
-                || e.contains("leakage")
-                || e.contains("null rate")
+            e.contains("NoOverlap")
+                || e.contains("TemporalSplit")
+                || e.contains("ClassBalance")
+                || e.contains("FeatureDrift")
+                || e.contains("TargetLeakage")
+                || e.contains("NullRateByGroup")
         })
         .collect();
     let ml_dict = PyDict::new(py);
@@ -322,9 +330,8 @@ fn validate_batch<'py>(
     let ctx = build_context(strict, schema_only, sample_size);
     let mut validator = DataValidator::new();
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| PyValueError::new_err(format!("Failed to create async runtime: {e}")))?;
-    let report = rt.block_on(validator.validate_with_data_async(&contract, &dataset, &ctx));
+    let report =
+        tokio_runtime().block_on(validator.validate_with_data_async(&contract, &dataset, &ctx));
 
     report_to_pydict(py, &report)
 }
@@ -355,9 +362,8 @@ fn validate_batches<'py>(
     let ctx = build_context(strict, schema_only, sample_size);
     let mut validator = DataValidator::new();
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| PyValueError::new_err(format!("Failed to create async runtime: {e}")))?;
-    let report = rt.block_on(validator.validate_with_data_async(&contract, &dataset, &ctx));
+    let report =
+        tokio_runtime().block_on(validator.validate_with_data_async(&contract, &dataset, &ctx));
 
     report_to_pydict(py, &report)
 }

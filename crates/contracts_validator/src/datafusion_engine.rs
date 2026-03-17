@@ -361,7 +361,10 @@ impl Default for DataFusionEngine {
 /// Convert a DCE DataSet + contract fields into an Arrow RecordBatch.
 ///
 /// Shared utility used by both `DataFusionEngine` and custom SQL execution.
-pub fn dataset_to_record_batch(fields: &[Field], dataset: &DataSet) -> Result<RecordBatch, String> {
+pub(crate) fn dataset_to_record_batch(
+    fields: &[Field],
+    dataset: &DataSet,
+) -> Result<RecordBatch, String> {
     let num_rows = dataset.len();
 
     let arrow_fields: Vec<ArrowField> = fields
@@ -383,7 +386,7 @@ pub fn dataset_to_record_batch(fields: &[Field], dataset: &DataSet) -> Result<Re
 }
 
 /// Run a SQL query that returns a single count column and extract the i64 result.
-pub async fn count_query(ctx: &SessionContext, sql: &str) -> Result<i64, String> {
+pub(crate) async fn count_query(ctx: &SessionContext, sql: &str) -> Result<i64, String> {
     let df = ctx.sql(sql).await.map_err(|e| e.to_string())?;
     let batches = df.collect().await.map_err(|e| e.to_string())?;
     let batch = batches.first().ok_or("no batches")?;

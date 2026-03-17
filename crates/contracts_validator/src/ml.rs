@@ -107,7 +107,8 @@ impl MlValidator {
                 .insert(composite_key);
         }
 
-        let splits: Vec<&String> = keys_per_split.keys().collect();
+        let mut splits: Vec<&String> = keys_per_split.keys().collect();
+        splits.sort();
         let mut errors = Vec::new();
 
         if skipped_rows > 0 {
@@ -126,7 +127,10 @@ impl MlValidator {
                     .collect();
 
                 if !overlap.is_empty() {
-                    let samples: Vec<_> = overlap.iter().take(5).map(|s| s.as_str()).collect();
+                    let mut sorted_overlap = overlap.clone();
+                    sorted_overlap.sort();
+                    let samples: Vec<_> =
+                        sorted_overlap.iter().take(5).map(|s| s.as_str()).collect();
                     let sample_str = samples.join(", ");
                     let suffix = if overlap.len() > 5 { ", ..." } else { "" };
 
@@ -201,6 +205,12 @@ impl MlValidator {
 
         // Determine the ordered pairs to check
         let pairs: Vec<(String, String)> = if let Some(ref order) = check.split_order {
+            if order.len() < 2 {
+                return vec![ValidationError::quality_check(
+                    "TemporalSplit check failed: split_order must contain at least 2 entries"
+                        .to_string(),
+                )];
+            }
             order
                 .windows(2)
                 .map(|w| (w[0].clone(), w[1].clone()))

@@ -256,6 +256,21 @@ impl CustomValidator {
         check: &CustomCheck,
         ctx: &SessionContext,
     ) -> Result<Option<ValidationError>, ValidationError> {
+        // Only allow SELECT statements to prevent DDL/DML side effects
+        let trimmed = check.definition.trim();
+        if !trimmed.to_uppercase().starts_with("SELECT") {
+            return Err(ValidationError::custom_check(
+                &check.name,
+                "Custom checks must be SELECT statements".to_string(),
+            ));
+        }
+        if trimmed.contains(';') {
+            return Err(ValidationError::custom_check(
+                &check.name,
+                "Custom checks must not contain semicolons (multiple statements)".to_string(),
+            ));
+        }
+
         let df = ctx.sql(&check.definition).await.map_err(|e| {
             ValidationError::custom_check(&check.name, format!("SQL execution error: {e}"))
         })?;

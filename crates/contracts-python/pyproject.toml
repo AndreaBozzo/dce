@@ -7,7 +7,7 @@ name = "dce"
 requires-python = ">=3.9"
 description = "Python bindings for the Data Contracts Engine"
 dependencies = [
-    "pyarrow>= "23.0.0",
+    "pyarrow>=23.0.0",
 ]
 
 [tool.maturin]
