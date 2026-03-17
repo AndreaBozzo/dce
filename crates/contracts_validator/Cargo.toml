@@ -18,6 +18,10 @@ regex = { workspace = true }
 validator = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
+datafusion = { workspace = true }
+tokio = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

@@ -173,6 +173,9 @@ pub struct QualityChecks {
 
     /// User-defined validation checks
     pub custom_checks: Option<Vec<CustomCheck>>,
+
+    /// ML-specific quality checks
+    pub ml_checks: Option<MlChecks>,
 }
 
 /// Freshness check to ensure data is up-to-date.
@@ -228,6 +231,73 @@ pub struct CustomCheck {
 
     /// Severity level (e.g., "error", "warning", "info")
     pub severity: Option<String>,
+}
+
+/// ML-specific quality checks for machine learning datasets.
+///
+/// These checks ensure that datasets used for ML training and evaluation
+/// follow best practices around data splitting, class balance, and
+/// feature-target separation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MlChecks {
+    /// Ensures train/test/validation splits have no overlapping rows
+    pub no_overlap: Option<NoOverlapCheck>,
+
+    /// Validates temporal ordering in train/test splits
+    pub temporal_split: Option<TemporalSplitCheck>,
+
+    /// Validates class label distribution is not overly skewed
+    pub class_balance: Option<ClassBalanceCheck>,
+}
+
+/// Ensures that the specified split field produces non-overlapping groups.
+///
+/// For ML pipelines, it is critical that the train, validation, and test sets
+/// share no rows. This check validates uniqueness of a key field across splits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoOverlapCheck {
+    /// The field that denotes the split (e.g., "split" with values "train"/"test"/"val")
+    pub split_field: String,
+
+    /// The key field(s) that must not overlap across splits (e.g., "user_id")
+    pub key_fields: Vec<String>,
+}
+
+/// Validates temporal ordering between splits.
+///
+/// For time-series ML, training data must precede test data chronologically.
+/// This check ensures max(timestamp) in "train" <= min(timestamp) in "test".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemporalSplitCheck {
+    /// The field that denotes the split (e.g., "split")
+    pub split_field: String,
+
+    /// The timestamp field to check ordering on
+    pub timestamp_field: String,
+
+    /// The split value representing training data (default: "train")
+    pub train_split: String,
+
+    /// The split value representing test data (default: "test")
+    pub test_split: String,
+}
+
+/// Validates that class labels are reasonably balanced.
+///
+/// Extremely imbalanced datasets can silently degrade model quality.
+/// This check ensures no single class exceeds a maximum proportion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClassBalanceCheck {
+    /// The label/target field to check
+    pub label_field: String,
+
+    /// Maximum allowed proportion for any single class (0.0 to 1.0)
+    /// e.g., 0.95 means no class can be >95% of the data
+    pub max_proportion: f64,
+
+    /// Minimum allowed proportion for any single class (0.0 to 1.0)
+    /// e.g., 0.01 means every class must be >=1% of the data
+    pub min_proportion: Option<f64>,
 }
 
 /// Service Level Agreement for data availability and performance.

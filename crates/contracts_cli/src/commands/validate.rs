@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use contracts_core::{DataFormat, ValidationContext};
 use contracts_iceberg::{IcebergConfig, IcebergValidator};
 use contracts_parser::parse_file;
@@ -50,7 +50,9 @@ pub async fn execute(
                 );
                 let dataset = DataSet::empty();
                 let mut validator = DataValidator::new();
-                validator.validate_with_data(&contract, &dataset, &context)
+                validator
+                    .validate_with_data_async(&contract, &dataset, &context)
+                    .await
             } else {
                 output::print_info("Detected Iceberg format, connecting to catalog...");
                 validate_iceberg_table(&contract, &context).await?
@@ -64,7 +66,9 @@ pub async fn execute(
             ));
             let dataset = DataSet::empty();
             let mut validator = DataValidator::new();
-            validator.validate_with_data(&contract, &dataset, &context)
+            validator
+                .validate_with_data_async(&contract, &dataset, &context)
+                .await
         }
     };
 

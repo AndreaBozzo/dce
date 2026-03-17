@@ -1,21 +1,21 @@
 //! Catalog loading and management for Iceberg tables.
 
 use crate::{
-    config::{CatalogType, IcebergConfig},
     IcebergError,
+    config::{CatalogType, IcebergConfig},
 };
 use iceberg::io::{FileIO, FileIOBuilder};
 use iceberg::{Catalog, CatalogBuilder, TableIdent};
 
 #[cfg(feature = "glue-catalog")]
-use iceberg_catalog_glue::{GlueCatalogBuilder, GLUE_CATALOG_PROP_WAREHOUSE};
+use iceberg_catalog_glue::{GLUE_CATALOG_PROP_WAREHOUSE, GlueCatalogBuilder};
 
 #[cfg(feature = "hms-catalog")]
-use iceberg_catalog_hms::{HmsCatalogBuilder, HMS_CATALOG_PROP_URI, HMS_CATALOG_PROP_WAREHOUSE};
+use iceberg_catalog_hms::{HMS_CATALOG_PROP_URI, HMS_CATALOG_PROP_WAREHOUSE, HmsCatalogBuilder};
 
 #[cfg(feature = "rest-catalog")]
 use iceberg_catalog_rest::{
-    RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
+    REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE, RestCatalogBuilder,
 };
 
 use std::collections::HashMap;

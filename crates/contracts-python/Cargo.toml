@@ -1,0 +1,23 @@
+[package]
+name = "contracts-python"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "dce"
+crate-type = ["cdylib"]
+
+[dependencies]
+contracts_core = { path = "../contracts_core" }
+contracts_parser = { path = "../contracts_parser" }
+contracts_validator = { path = "../contracts_validator" }
+pyo3 = { version = "0.26.0", features = ["extension-module"] }
+arrow = { version = "57.3.0", features = ["pyarrow"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

@@ -3,7 +3,7 @@
 **/*.rlib
 **/*.dSYM
 **/*.rs.bk
-contracts_core/target/
+crates/contracts_core/target/
 
 # Python
 __pycache__/

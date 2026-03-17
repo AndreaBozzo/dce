@@ -35,18 +35,71 @@ impl CustomValidator {
         }
 
         // Freshness check
-        if let Some(freshness) = &quality_checks.freshness {
-            if let Err(err) = self.validate_freshness(freshness, dataset) {
-                errors.push(err);
-            }
+        if let Some(freshness) = &quality_checks.freshness
+            && let Err(err) = self.validate_freshness(freshness, dataset)
+        {
+            errors.push(err);
         }
 
         // Custom checks - for now just validate syntax
         if let Some(custom_checks) = &quality_checks.custom_checks {
-            errors.extend(self.validate_custom_checks(custom_checks));
+            for check in custom_checks {
+                errors.extend(self.validate_single_custom_check(check));
+            }
         }
 
         errors
+    }
+
+    /// Validates freshness checks only.
+    pub fn validate_freshness_only(
+        &self,
+        contract: &Contract,
+        dataset: &DataSet,
+    ) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        let quality_checks = match &contract.quality_checks {
+            Some(qc) => qc,
+            None => return errors,
+        };
+
+        if dataset.is_empty() {
+            return errors;
+        }
+
+        if let Some(freshness) = &quality_checks.freshness
+            && let Err(err) = self.validate_freshness(freshness, dataset)
+        {
+            errors.push(err);
+        }
+
+        errors
+    }
+
+    /// Validates custom SQL checks and returns each failure with its declared severity.
+    pub fn validate_custom_checks_only(
+        &self,
+        contract: &Contract,
+    ) -> Vec<(Option<String>, ValidationError)> {
+        let mut outcomes = Vec::new();
+
+        let quality_checks = match &contract.quality_checks {
+            Some(qc) => qc,
+            None => return outcomes,
+        };
+
+        if let Some(custom_checks) = &quality_checks.custom_checks {
+            for check in custom_checks {
+                outcomes.extend(
+                    self.validate_single_custom_check(check)
+                        .into_iter()
+                        .map(|error| (check.severity.clone(), error)),
+                );
+            }
+        }
+
+        outcomes
     }
 
     /// Validates freshness requirements.
@@ -62,16 +115,16 @@ impl CustomValidator {
         let mut most_recent: Option<DateTime<Utc>> = None;
 
         for row in dataset.rows() {
-            if let Some(value) = row.get(&check.metric) {
-                if let Some(ts_str) = value.as_timestamp() {
-                    match parse_timestamp(ts_str) {
-                        Ok(ts) => {
-                            if most_recent.is_none() || ts > most_recent.unwrap() {
-                                most_recent = Some(ts);
-                            }
+            if let Some(value) = row.get(&check.metric)
+                && let Some(ts_str) = value.as_timestamp()
+            {
+                match parse_timestamp(ts_str) {
+                    Ok(ts) => {
+                        if most_recent.is_none() || ts > most_recent.unwrap() {
+                            most_recent = Some(ts);
                         }
-                        Err(_) => continue, // Skip invalid timestamps
                     }
+                    Err(_) => continue, // Skip invalid timestamps
                 }
             }
         }
@@ -95,31 +148,28 @@ impl CustomValidator {
     }
 
     /// Validates custom SQL checks (syntax only, no execution).
-    fn validate_custom_checks(&self, checks: &[CustomCheck]) -> Vec<ValidationError> {
+    fn validate_single_custom_check(&self, check: &CustomCheck) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
-        for check in checks {
-            // Basic syntax validation
-            if check.definition.trim().is_empty() {
-                errors.push(ValidationError::custom_check(
-                    &check.name,
-                    "Custom check definition is empty",
-                ));
-                continue;
-            }
-
-            // Check if it looks like SQL (very basic validation)
-            let def_upper = check.definition.to_uppercase();
-            if !def_upper.contains("SELECT") && !def_upper.contains("COUNT") {
-                errors.push(ValidationError::custom_check(
-                    &check.name,
-                    "Custom check definition does not appear to be a SQL query",
-                ));
-            }
-
-            // Note: Full SQL parsing and execution is deferred to Phase 2
+        // Basic syntax validation
+        if check.definition.trim().is_empty() {
+            errors.push(ValidationError::custom_check(
+                &check.name,
+                "Custom check definition is empty",
+            ));
+            return errors;
         }
 
+        // Check if it looks like SQL (very basic validation)
+        let def_upper = check.definition.to_uppercase();
+        if !def_upper.contains("SELECT") && !def_upper.contains("COUNT") {
+            errors.push(ValidationError::custom_check(
+                &check.name,
+                "Custom check definition does not appear to be a SQL query",
+            ));
+        }
+
+        // Note: Full SQL parsing and execution is deferred to Phase 2
         errors
     }
 }
@@ -166,7 +216,7 @@ fn parse_duration(duration_str: &str) -> Result<Duration, ValidationError> {
             return Err(ValidationError::InvalidDuration(format!(
                 "Unknown duration unit: {}",
                 unit
-            )))
+            )));
         }
     };
 
@@ -181,7 +231,7 @@ fn parse_duration(duration_str: &str) -> Result<Duration, ValidationError> {
 /// - Unix epoch milliseconds (e.g., "1705318200000")
 /// - Date only format (e.g., "2024-01-15")
 /// - Common datetime formats (e.g., "2024-01-15 10:30:00")
-fn parse_timestamp(ts_str: &str) -> Result<DateTime<Utc>, ValidationError> {
+pub(crate) fn parse_timestamp(ts_str: &str) -> Result<DateTime<Utc>, ValidationError> {
     let ts_str = ts_str.trim();
 
     // Try ISO 8601 / RFC 3339 format first (most common)
@@ -207,19 +257,21 @@ fn parse_timestamp(ts_str: &str) -> Result<DateTime<Utc>, ValidationError> {
 
     // Try common date-time formats without timezone
     // Format: YYYY-MM-DD HH:MM:SS
-    if ts_str.contains(' ') && ts_str.len() >= 19 {
-        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%d %H:%M:%S") {
-            return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
-        }
+    if ts_str.contains(' ')
+        && ts_str.len() >= 19
+        && let Ok(naive) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%d %H:%M:%S")
+    {
+        return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
     }
 
     // Try date-only format (assume start of day UTC)
     // Format: YYYY-MM-DD
-    if ts_str.len() == 10 && ts_str.chars().filter(|c| *c == '-').count() == 2 {
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(ts_str, "%Y-%m-%d") {
-            let datetime = date.and_hms_opt(0, 0, 0).unwrap();
-            return Ok(DateTime::from_naive_utc_and_offset(datetime, Utc));
-        }
+    if ts_str.len() == 10
+        && ts_str.chars().filter(|c| *c == '-').count() == 2
+        && let Ok(date) = chrono::NaiveDate::parse_from_str(ts_str, "%Y-%m-%d")
+    {
+        let datetime = date.and_hms_opt(0, 0, 0).unwrap();
+        return Ok(DateTime::from_naive_utc_and_offset(datetime, Utc));
     }
 
     // Try standard DateTime<Utc> parsing as fallback
@@ -294,6 +346,7 @@ mod tests {
                     metric: "timestamp".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -332,6 +385,7 @@ mod tests {
                     metric: "timestamp".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -368,6 +422,7 @@ mod tests {
                     definition: "SELECT COUNT(*) FROM table".to_string(),
                     severity: Some("error".to_string()),
                 }]),
+                ml_checks: None,
             })
             .build();
 
@@ -396,6 +451,7 @@ mod tests {
                     definition: "".to_string(),
                     severity: Some("error".to_string()),
                 }]),
+                ml_checks: None,
             })
             .build();
 
@@ -506,6 +562,7 @@ mod tests {
                     metric: "timestamp".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 
@@ -545,6 +602,7 @@ mod tests {
                     metric: "date".to_string(),
                 }),
                 custom_checks: None,
+                ml_checks: None,
             })
             .build();
 

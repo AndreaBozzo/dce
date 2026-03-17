@@ -1,6 +1,6 @@
 //! Schema extraction from Iceberg tables.
 
-use crate::{converter::iceberg_type_to_dce_type, IcebergError};
+use crate::{IcebergError, converter::iceberg_type_to_dce_type};
 use contracts_core::{DataFormat, Field as ContractField, Schema as ContractSchema};
 use iceberg::spec::{NestedField, Schema as IcebergSchema};
 use tracing::{debug, info};

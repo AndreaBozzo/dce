@@ -45,10 +45,10 @@ pub async fn execute(contract_path: &str, _format: &str) -> Result<()> {
         if qc.freshness.is_some() {
             checks.push("freshness".to_string());
         }
-        if let Some(custom) = &qc.custom_checks {
-            if !custom.is_empty() {
-                checks.push(format!("{} custom", custom.len()));
-            }
+        if let Some(custom) = &qc.custom_checks
+            && !custom.is_empty()
+        {
+            checks.push(format!("{} custom", custom.len()));
         }
         println!("  Quality Checks: {}", checks.join(", "));
     }

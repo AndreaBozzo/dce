@@ -87,10 +87,10 @@ impl SchemaValidator {
         }
 
         // Check type (skip for null values)
-        if !value.is_null() {
-            if let Some(err) = self.validate_type(field, value, row_idx) {
-                return Some(err);
-            }
+        if !value.is_null()
+            && let Some(err) = self.validate_type(field, value, row_idx)
+        {
+            return Some(err);
         }
 
         None
