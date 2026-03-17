@@ -248,6 +248,15 @@ pub struct MlChecks {
 
     /// Validates class label distribution is not overly skewed
     pub class_balance: Option<ClassBalanceCheck>,
+
+    /// Detects feature distribution drift between splits using PSI
+    pub feature_drift: Option<FeatureDriftCheck>,
+
+    /// Detects features with suspiciously high correlation to the target
+    pub target_leakage: Option<TargetLeakageCheck>,
+
+    /// Detects disparate null rates across groups/splits
+    pub null_rate_by_group: Option<NullRateByGroupCheck>,
 }
 
 /// Ensures that the specified split field produces non-overlapping groups.
@@ -267,6 +276,10 @@ pub struct NoOverlapCheck {
 ///
 /// For time-series ML, training data must precede test data chronologically.
 /// This check ensures max(timestamp) in "train" <= min(timestamp) in "test".
+///
+/// When `split_order` is provided, validates all adjacent pairs in order
+/// (e.g., `["train", "val", "test"]` checks train <= val and val <= test).
+/// Otherwise falls back to the two-field `train_split`/`test_split` behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemporalSplitCheck {
     /// The field that denotes the split (e.g., "split")
@@ -280,6 +293,10 @@ pub struct TemporalSplitCheck {
 
     /// The split value representing test data (default: "test")
     pub test_split: String,
+
+    /// Ordered list of split names for N-way temporal validation.
+    /// When present, overrides `train_split`/`test_split`.
+    pub split_order: Option<Vec<String>>,
 }
 
 /// Validates that class labels are reasonably balanced.
@@ -298,6 +315,64 @@ pub struct ClassBalanceCheck {
     /// Minimum allowed proportion for any single class (0.0 to 1.0)
     /// e.g., 0.01 means every class must be >=1% of the data
     pub min_proportion: Option<f64>,
+}
+
+/// Detects feature distribution drift between a reference and current split
+/// using Population Stability Index (PSI).
+///
+/// PSI > 0.1 suggests moderate drift; > 0.2 suggests significant drift.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureDriftCheck {
+    /// The field that denotes the split (e.g., "split")
+    pub split_field: String,
+
+    /// The split value used as the reference distribution (e.g., "train")
+    pub reference_split: String,
+
+    /// The split value used as the current distribution (e.g., "test")
+    pub current_split: String,
+
+    /// Numeric feature fields to check for drift
+    pub feature_fields: Vec<String>,
+
+    /// Number of bins for PSI calculation (default: 10)
+    pub num_bins: Option<usize>,
+
+    /// PSI threshold above which drift is flagged (default: 0.2)
+    pub threshold: Option<f64>,
+}
+
+/// Detects features with suspiciously high correlation to the target,
+/// which may indicate target leakage.
+///
+/// Computes Pearson correlation between each feature and the target.
+/// Features exceeding `max_correlation` are flagged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TargetLeakageCheck {
+    /// The target/label field
+    pub target_field: String,
+
+    /// Feature fields to check for leakage
+    pub feature_fields: Vec<String>,
+
+    /// Maximum allowed absolute correlation (default: 0.95)
+    pub max_correlation: Option<f64>,
+}
+
+/// Detects disparate null rates across groups or splits.
+///
+/// Flags fields where the difference in null rates between groups
+/// exceeds a threshold, indicating potential data quality issues.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NullRateByGroupCheck {
+    /// The field used to group rows (e.g., "split", "region")
+    pub group_field: String,
+
+    /// Fields to check for null rate disparity
+    pub check_fields: Vec<String>,
+
+    /// Maximum allowed difference in null rates across groups (default: 0.1)
+    pub max_null_rate_diff: Option<f64>,
 }
 
 /// Service Level Agreement for data availability and performance.

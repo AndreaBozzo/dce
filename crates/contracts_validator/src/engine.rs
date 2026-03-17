@@ -63,7 +63,10 @@ impl DataValidator {
     }
 
     /// Validates a contract against a dataset using the DataFusion-backed engine
-    /// for schema, constraint, and quality evaluation.
+    /// for schema, constraint, quality, and custom SQL evaluation.
+    ///
+    /// Unlike the sync `validate_with_data`, this path executes custom SQL checks
+    /// against the actual data via DataFusion (not just syntax validation).
     pub async fn validate_with_data_async(
         &mut self,
         contract: &Contract,
@@ -76,13 +79,49 @@ impl DataValidator {
             .validate(contract, &dataset_to_validate, context)
             .await;
 
-        self.apply_custom_and_ml_checks(
+        self.apply_ml_checks(
             contract,
             &dataset_to_validate,
             context,
             &mut report.errors,
             &mut report.warnings,
         );
+
+        // Execute custom SQL checks with actual DataFusion execution
+        if !context.schema_only {
+            let freshness_errors = self
+                .custom_validator
+                .validate_freshness_only(contract, &dataset_to_validate);
+            if context.strict {
+                report
+                    .errors
+                    .extend(freshness_errors.iter().map(|e| e.to_string()));
+            } else {
+                report
+                    .warnings
+                    .extend(freshness_errors.iter().map(|e| e.to_string()));
+            }
+
+            let custom_outcomes = self
+                .custom_validator
+                .validate_custom_checks_with_data(
+                    contract,
+                    &dataset_to_validate,
+                    &contract.schema.fields,
+                )
+                .await;
+
+            for (severity, error) in custom_outcomes {
+                match severity.as_deref() {
+                    Some("error") => report.errors.push(error.to_string()),
+                    Some("warning") | Some("info") => report.warnings.push(error.to_string()),
+                    Some(_) => report.warnings.push(error.to_string()),
+                    None if context.strict => report.errors.push(error.to_string()),
+                    None => report.warnings.push(error.to_string()),
+                }
+            }
+        }
+
         report.passed = report.errors.is_empty();
         report
     }
@@ -163,6 +202,30 @@ impl DataValidator {
             dataset.sample(sample_size)
         } else {
             dataset.clone()
+        }
+    }
+
+    fn apply_ml_checks(
+        &self,
+        contract: &Contract,
+        dataset: &DataSet,
+        context: &ValidationContext,
+        errors: &mut Vec<String>,
+        warnings: &mut Vec<String>,
+    ) {
+        if context.schema_only {
+            return;
+        }
+
+        if let Some(ref qc) = contract.quality_checks
+            && let Some(ref ml) = qc.ml_checks
+        {
+            let ml_errors = self.ml_validator.validate(ml, dataset);
+            if context.strict {
+                errors.extend(ml_errors.iter().map(|e| e.to_string()));
+            } else {
+                warnings.extend(ml_errors.iter().map(|e| e.to_string()));
+            }
         }
     }
 
@@ -262,6 +325,50 @@ impl DataValidator {
                 duration_ms,
             },
         }
+    }
+
+    /// Validates only quality checks (completeness, uniqueness, freshness, ML) against data.
+    pub fn validate_quality_only(
+        &self,
+        contract: &Contract,
+        dataset: &DataSet,
+    ) -> ValidationReport {
+        let start = Instant::now();
+        let errors = Vec::new();
+        let mut warnings = Vec::new();
+
+        let quality_errors = self.quality_validator.validate(contract, dataset);
+        warnings.extend(quality_errors.iter().map(|e| e.to_string()));
+
+        let freshness_errors = self
+            .custom_validator
+            .validate_freshness_only(contract, dataset);
+        warnings.extend(freshness_errors.iter().map(|e| e.to_string()));
+
+        if let Some(ref qc) = contract.quality_checks
+            && let Some(ref ml) = qc.ml_checks
+        {
+            let ml_errors = self.ml_validator.validate(ml, dataset);
+            warnings.extend(ml_errors.iter().map(|e| e.to_string()));
+        }
+
+        self.build_report(errors, warnings, contract, dataset, start)
+    }
+
+    /// Validates only ML checks against data.
+    pub fn validate_ml_only(&self, contract: &Contract, dataset: &DataSet) -> ValidationReport {
+        let start = Instant::now();
+        let errors = Vec::new();
+        let mut warnings = Vec::new();
+
+        if let Some(ref qc) = contract.quality_checks
+            && let Some(ref ml) = qc.ml_checks
+        {
+            let ml_errors = self.ml_validator.validate(ml, dataset);
+            warnings.extend(ml_errors.iter().map(|e| e.to_string()));
+        }
+
+        self.build_report(errors, warnings, contract, dataset, start)
     }
 
     /// Validates only the contract definition itself (no data).
@@ -609,6 +716,75 @@ mod tests {
         assert!(!report.passed);
         assert_eq!(report.errors.len(), 1);
         assert_eq!(report.warnings.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_async_custom_sql_check_pass() {
+        let contract = ContractBuilder::new("test", "owner")
+            .location("s3://test")
+            .format(DataFormat::Iceberg)
+            .field(FieldBuilder::new("age", "int64").nullable(false).build())
+            .quality_checks(QualityChecks {
+                completeness: None,
+                uniqueness: None,
+                freshness: None,
+                custom_checks: Some(vec![CustomCheck {
+                    name: "no_negative_ages".to_string(),
+                    definition: "SELECT COUNT(*) FROM data WHERE age < 0".to_string(),
+                    severity: Some("error".to_string()),
+                }]),
+                ml_checks: None,
+            })
+            .build();
+
+        let mut row = HashMap::new();
+        row.insert("age".to_string(), DataValue::Int(25));
+
+        let dataset = DataSet::from_rows(vec![row]);
+        let context = ValidationContext::new();
+        let mut validator = DataValidator::new();
+
+        let report = validator
+            .validate_with_data_async(&contract, &dataset, &context)
+            .await;
+        assert!(
+            report.passed,
+            "Expected pass, got errors: {:?}",
+            report.errors
+        );
+    }
+
+    #[tokio::test]
+    async fn test_async_custom_sql_check_fail() {
+        let contract = ContractBuilder::new("test", "owner")
+            .location("s3://test")
+            .format(DataFormat::Iceberg)
+            .field(FieldBuilder::new("age", "int64").nullable(false).build())
+            .quality_checks(QualityChecks {
+                completeness: None,
+                uniqueness: None,
+                freshness: None,
+                custom_checks: Some(vec![CustomCheck {
+                    name: "no_negative_ages".to_string(),
+                    definition: "SELECT COUNT(*) FROM data WHERE age < 0".to_string(),
+                    severity: Some("error".to_string()),
+                }]),
+                ml_checks: None,
+            })
+            .build();
+
+        let mut row = HashMap::new();
+        row.insert("age".to_string(), DataValue::Int(-5));
+
+        let dataset = DataSet::from_rows(vec![row]);
+        let context = ValidationContext::new();
+        let mut validator = DataValidator::new();
+
+        let report = validator
+            .validate_with_data_async(&contract, &dataset, &context)
+            .await;
+        assert!(!report.passed);
+        assert!(report.errors.iter().any(|e| e.contains("no_negative_ages")));
     }
 
     #[tokio::test]

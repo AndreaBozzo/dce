@@ -4,9 +4,10 @@
 //! - Freshness checks: Validates data staleness based on timestamps
 //! - Custom SQL checks: Syntax validation (execution deferred to Phase 2)
 
-use crate::{DataSet, ValidationError};
+use crate::{DataSet, ValidationError, datafusion_engine};
 use chrono::{DateTime, Duration, Utc};
-use contracts_core::{Contract, CustomCheck, FreshnessCheck};
+use contracts_core::{Contract, CustomCheck, Field, FreshnessCheck};
+use datafusion::prelude::*;
 
 #[cfg(test)]
 use chrono::Timelike;
@@ -169,8 +170,138 @@ impl CustomValidator {
             ));
         }
 
-        // Note: Full SQL parsing and execution is deferred to Phase 2
         errors
+    }
+
+    /// Validates custom SQL checks with actual DataFusion execution.
+    ///
+    /// Each check definition is executed as a SQL query against the dataset
+    /// registered as table "data". A check fails if the query returns a
+    /// count > 0 (single-column result) or a non-empty result set.
+    pub async fn validate_custom_checks_with_data(
+        &self,
+        contract: &Contract,
+        dataset: &DataSet,
+        schema_fields: &[Field],
+    ) -> Vec<(Option<String>, ValidationError)> {
+        let quality_checks = match &contract.quality_checks {
+            Some(qc) => qc,
+            None => return Vec::new(),
+        };
+
+        let custom_checks = match &quality_checks.custom_checks {
+            Some(checks) => checks,
+            None => return Vec::new(),
+        };
+
+        if dataset.is_empty() || custom_checks.is_empty() {
+            return Vec::new();
+        }
+
+        // Build a DataFusion session with the dataset registered as "data"
+        let batch = match datafusion_engine::dataset_to_record_batch(schema_fields, dataset) {
+            Ok(b) => b,
+            Err(e) => {
+                return vec![(
+                    Some("error".to_string()),
+                    ValidationError::custom_check(
+                        "_setup",
+                        format!("Failed to create Arrow batch: {e}"),
+                    ),
+                )];
+            }
+        };
+
+        let ctx = SessionContext::new();
+        if let Err(e) = ctx.register_batch("data", batch) {
+            return vec![(
+                Some("error".to_string()),
+                ValidationError::custom_check("_setup", format!("Failed to register table: {e}")),
+            )];
+        }
+
+        let mut outcomes = Vec::new();
+
+        for check in custom_checks {
+            // First do syntax validation
+            let syntax_errors = self.validate_single_custom_check(check);
+            if !syntax_errors.is_empty() {
+                outcomes.extend(
+                    syntax_errors
+                        .into_iter()
+                        .map(|e| (check.severity.clone(), e)),
+                );
+                continue;
+            }
+
+            // Execute the SQL query
+            match self.execute_custom_check(check, &ctx).await {
+                Ok(Some(error)) => outcomes.push((check.severity.clone(), error)),
+                Ok(None) => {} // check passed
+                Err(error) => outcomes.push((check.severity.clone(), error)),
+            }
+        }
+
+        outcomes
+    }
+
+    /// Executes a single custom SQL check against the DataFusion context.
+    ///
+    /// Returns:
+    /// - `Ok(None)` if the check passed (count = 0 or empty result)
+    /// - `Ok(Some(error))` if the check failed (count > 0 or non-empty result)
+    /// - `Err(error)` if execution itself failed
+    async fn execute_custom_check(
+        &self,
+        check: &CustomCheck,
+        ctx: &SessionContext,
+    ) -> Result<Option<ValidationError>, ValidationError> {
+        let df = ctx.sql(&check.definition).await.map_err(|e| {
+            ValidationError::custom_check(&check.name, format!("SQL execution error: {e}"))
+        })?;
+
+        let batches = df.collect().await.map_err(|e| {
+            ValidationError::custom_check(&check.name, format!("SQL execution error: {e}"))
+        })?;
+
+        // Check results: if single numeric column, treat > 0 as failure
+        // Otherwise, treat non-empty result set as failure
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+
+        if total_rows == 0 {
+            return Ok(None); // passed
+        }
+
+        // Try to interpret as count query (single column, single row)
+        if let Some(batch) = batches.first()
+            && batch.num_columns() == 1
+            && batch.num_rows() == 1
+        {
+            let col = batch.column(0);
+            let count = if let Some(a) = col.as_any().downcast_ref::<arrow_array::Int64Array>() {
+                Some(a.value(0))
+            } else {
+                col.as_any()
+                    .downcast_ref::<arrow_array::UInt64Array>()
+                    .map(|a| a.value(0) as i64)
+            };
+
+            if let Some(cnt) = count {
+                if cnt == 0 {
+                    return Ok(None); // passed
+                }
+                return Ok(Some(ValidationError::custom_check(
+                    &check.name,
+                    format!("returned count {cnt} (expected 0)"),
+                )));
+            }
+        }
+
+        // Non-empty result set = failure
+        Ok(Some(ValidationError::custom_check(
+            &check.name,
+            format!("returned {total_rows} row(s) (expected empty result)"),
+        )))
     }
 }
 

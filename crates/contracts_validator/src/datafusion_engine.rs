@@ -45,7 +45,7 @@ impl DataFusionEngine {
         }
 
         // Build Arrow RecordBatch from dataset
-        let batch = match self.dataset_to_record_batch(contract, dataset) {
+        let batch = match dataset_to_record_batch(&contract.schema.fields, dataset) {
             Ok(b) => b,
             Err(e) => {
                 errors.push(format!("Failed to create Arrow batch: {e}"));
@@ -103,7 +103,7 @@ impl DataFusionEngine {
                 "SELECT COUNT(*) AS cnt FROM data WHERE \"{}\" IS NULL",
                 field.name
             );
-            if let Ok(cnt) = self.count_query(ctx, &sql).await
+            if let Ok(cnt) = count_query(ctx, &sql).await
                 && cnt > 0
             {
                 errs.push(format!(
@@ -166,7 +166,7 @@ impl DataFusionEngine {
              WHERE \"{}\" IS NOT NULL AND CAST(\"{}\" AS VARCHAR) NOT IN ({in_list})",
             field.name, field.name
         );
-        match self.count_query(ctx, &sql).await {
+        match count_query(ctx, &sql).await {
             Ok(cnt) if cnt > 0 => vec![format!(
                 "Constraint violation for field '{}': {cnt} row(s) not in allowed values [{}]",
                 field.name,
@@ -188,7 +188,7 @@ impl DataFusionEngine {
              WHERE \"{}\" IS NOT NULL AND (CAST(\"{}\" AS DOUBLE) < {min} OR CAST(\"{}\" AS DOUBLE) > {max})",
             field.name, field.name, field.name
         );
-        match self.count_query(ctx, &sql).await {
+        match count_query(ctx, &sql).await {
             Ok(cnt) if cnt > 0 => vec![format!(
                 "Constraint violation for field '{}': {cnt} row(s) out of range [{min}, {max}]",
                 field.name
@@ -198,27 +198,24 @@ impl DataFusionEngine {
     }
 
     async fn check_pattern(&self, field: &Field, regex: &str, ctx: &SessionContext) -> Vec<String> {
-        // DataFusion supports `~` (regexp match) operator
         let escaped = regex.replace('\'', "''");
         let sql = format!(
             "SELECT COUNT(*) AS cnt FROM data \
              WHERE \"{}\" IS NOT NULL AND CAST(\"{}\" AS VARCHAR) NOT SIMILAR TO '{escaped}'",
             field.name, field.name
         );
-        // Fallback: if SIMILAR TO is not compatible with the regex, try regexp_match
-        match self.count_query(ctx, &sql).await {
+        match count_query(ctx, &sql).await {
             Ok(cnt) if cnt > 0 => vec![format!(
                 "Constraint violation for field '{}': {cnt} row(s) do not match pattern '{regex}'",
                 field.name
             )],
             Err(_) => {
-                // Try with regexp_match as fallback
                 let sql2 = format!(
                     "SELECT COUNT(*) AS cnt FROM data \
                      WHERE \"{}\" IS NOT NULL AND regexp_match(CAST(\"{}\" AS VARCHAR), '{escaped}') IS NULL",
                     field.name, field.name
                 );
-                match self.count_query(ctx, &sql2).await {
+                match count_query(ctx, &sql2).await {
                     Ok(cnt) if cnt > 0 => vec![format!(
                         "Constraint violation for field '{}': {cnt} row(s) do not match pattern '{regex}'",
                         field.name
@@ -242,8 +239,6 @@ impl DataFusionEngine {
         if let Some(ref uniq) = qc.uniqueness {
             errs.extend(self.check_uniqueness(uniq, ctx).await);
         }
-        // Freshness and custom SQL checks remain as-is (not easily DataFusion-izable
-        // because they depend on wall-clock time comparisons).
         errs
     }
 
@@ -289,7 +284,7 @@ impl DataFusionEngine {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!("SELECT COUNT(*) - COUNT(DISTINCT ({cols})) AS dupes FROM data");
-        match self.count_query(ctx, &sql).await {
+        match count_query(ctx, &sql).await {
             Ok(cnt) if cnt > 0 => vec![format!(
                 "Quality check failed: Uniqueness check failed for fields [{}]: found {} duplicate(s)",
                 check.fields.join(", "),
@@ -300,132 +295,8 @@ impl DataFusionEngine {
     }
 
     // -----------------------------------------------------------------------
-    // Helpers
+    // Report
     // -----------------------------------------------------------------------
-
-    /// Run a SQL query that returns a single `COUNT(*)` / `cnt` column and
-    /// extract the i64 result.
-    async fn count_query(&self, ctx: &SessionContext, sql: &str) -> Result<i64, String> {
-        let df = ctx.sql(sql).await.map_err(|e| e.to_string())?;
-        let batches = df.collect().await.map_err(|e| e.to_string())?;
-        let batch = batches.first().ok_or("no batches")?;
-        if batch.num_rows() == 0 {
-            return Ok(0);
-        }
-        let col = batch.column(0);
-        // DataFusion may return Int64, UInt64 or others depending on the query
-        if let Some(a) = col.as_any().downcast_ref::<arrow_array::Int64Array>() {
-            Ok(a.value(0))
-        } else if let Some(a) = col.as_any().downcast_ref::<arrow_array::UInt64Array>() {
-            Ok(a.value(0) as i64)
-        } else {
-            Err(format!(
-                "unexpected count column type: {:?}",
-                col.data_type()
-            ))
-        }
-    }
-
-    /// Convert a DCE DataSet + Contract schema into an Arrow RecordBatch.
-    fn dataset_to_record_batch(
-        &self,
-        contract: &Contract,
-        dataset: &DataSet,
-    ) -> Result<RecordBatch, String> {
-        let fields = &contract.schema.fields;
-        let num_rows = dataset.len();
-
-        // Build Arrow schema
-        let arrow_fields: Vec<ArrowField> = fields
-            .iter()
-            .map(|f| {
-                let dt = dce_type_to_arrow(&f.field_type);
-                ArrowField::new(&f.name, dt, f.nullable)
-            })
-            .collect();
-        let schema = Arc::new(ArrowSchema::new(arrow_fields));
-
-        // Build columns
-        let mut columns: Vec<Arc<dyn arrow_array::Array>> = Vec::with_capacity(fields.len());
-        for field in fields {
-            let col = self.build_arrow_column(field, dataset, num_rows)?;
-            columns.push(col);
-        }
-
-        RecordBatch::try_new(schema, columns).map_err(|e| e.to_string())
-    }
-
-    fn build_arrow_column(
-        &self,
-        field: &Field,
-        dataset: &DataSet,
-        num_rows: usize,
-    ) -> Result<Arc<dyn arrow_array::Array>, String> {
-        let dt = dce_type_to_arrow(&field.field_type);
-        match dt {
-            DataType::Utf8 => {
-                let mut builder = StringBuilder::with_capacity(num_rows, num_rows * 32);
-                for row in dataset.rows() {
-                    match row.get(&field.name) {
-                        Some(DataValue::String(s)) => builder.append_value(s),
-                        Some(DataValue::Timestamp(s)) => builder.append_value(s),
-                        Some(DataValue::Int(i)) => builder.append_value(i.to_string()),
-                        Some(DataValue::Float(f)) => builder.append_value(f.to_string()),
-                        Some(DataValue::Bool(b)) => builder.append_value(b.to_string()),
-                        Some(DataValue::Null) | None => builder.append_null(),
-                        _ => builder.append_null(),
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-            DataType::Int64 => {
-                let mut builder = Int64Builder::with_capacity(num_rows);
-                for row in dataset.rows() {
-                    match row.get(&field.name) {
-                        Some(DataValue::Int(i)) => builder.append_value(*i),
-                        Some(DataValue::Float(f)) => builder.append_value(*f as i64),
-                        Some(DataValue::Null) | None => builder.append_null(),
-                        _ => builder.append_null(),
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-            DataType::Float64 => {
-                let mut builder = Float64Builder::with_capacity(num_rows);
-                for row in dataset.rows() {
-                    match row.get(&field.name) {
-                        Some(DataValue::Float(f)) => builder.append_value(*f),
-                        Some(DataValue::Int(i)) => builder.append_value(*i as f64),
-                        Some(DataValue::Null) | None => builder.append_null(),
-                        _ => builder.append_null(),
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-            DataType::Boolean => {
-                let mut builder = BooleanBuilder::with_capacity(num_rows);
-                for row in dataset.rows() {
-                    match row.get(&field.name) {
-                        Some(DataValue::Bool(b)) => builder.append_value(*b),
-                        Some(DataValue::Null) | None => builder.append_null(),
-                        _ => builder.append_null(),
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-            _ => {
-                // Fallback: store as Utf8
-                let mut builder = StringBuilder::with_capacity(num_rows, num_rows * 32);
-                for row in dataset.rows() {
-                    match row.get(&field.name) {
-                        Some(DataValue::Null) | None => builder.append_null(),
-                        Some(v) => builder.append_value(format!("{:?}", v)),
-                    }
-                }
-                Ok(Arc::new(builder.finish()))
-            }
-        }
-    }
 
     fn build_report(
         &self,
@@ -480,6 +351,126 @@ impl DataFusionEngine {
 impl Default for DataFusionEngine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared utilities
+// ---------------------------------------------------------------------------
+
+/// Convert a DCE DataSet + contract fields into an Arrow RecordBatch.
+///
+/// Shared utility used by both `DataFusionEngine` and custom SQL execution.
+pub fn dataset_to_record_batch(fields: &[Field], dataset: &DataSet) -> Result<RecordBatch, String> {
+    let num_rows = dataset.len();
+
+    let arrow_fields: Vec<ArrowField> = fields
+        .iter()
+        .map(|f| {
+            let dt = dce_type_to_arrow(&f.field_type);
+            ArrowField::new(&f.name, dt, f.nullable)
+        })
+        .collect();
+    let schema = Arc::new(ArrowSchema::new(arrow_fields));
+
+    let mut columns: Vec<Arc<dyn arrow_array::Array>> = Vec::with_capacity(fields.len());
+    for field in fields {
+        let col = build_arrow_column(field, dataset, num_rows)?;
+        columns.push(col);
+    }
+
+    RecordBatch::try_new(schema, columns).map_err(|e| e.to_string())
+}
+
+/// Run a SQL query that returns a single count column and extract the i64 result.
+pub async fn count_query(ctx: &SessionContext, sql: &str) -> Result<i64, String> {
+    let df = ctx.sql(sql).await.map_err(|e| e.to_string())?;
+    let batches = df.collect().await.map_err(|e| e.to_string())?;
+    let batch = batches.first().ok_or("no batches")?;
+    if batch.num_rows() == 0 {
+        return Ok(0);
+    }
+    let col = batch.column(0);
+    if let Some(a) = col.as_any().downcast_ref::<arrow_array::Int64Array>() {
+        Ok(a.value(0))
+    } else if let Some(a) = col.as_any().downcast_ref::<arrow_array::UInt64Array>() {
+        Ok(a.value(0) as i64)
+    } else {
+        Err(format!(
+            "unexpected count column type: {:?}",
+            col.data_type()
+        ))
+    }
+}
+
+fn build_arrow_column(
+    field: &Field,
+    dataset: &DataSet,
+    num_rows: usize,
+) -> Result<Arc<dyn arrow_array::Array>, String> {
+    let dt = dce_type_to_arrow(&field.field_type);
+    match dt {
+        DataType::Utf8 => {
+            let mut builder = StringBuilder::with_capacity(num_rows, num_rows * 32);
+            for row in dataset.rows() {
+                match row.get(&field.name) {
+                    Some(DataValue::String(s)) => builder.append_value(s),
+                    Some(DataValue::Timestamp(s)) => builder.append_value(s),
+                    Some(DataValue::Int(i)) => builder.append_value(i.to_string()),
+                    Some(DataValue::Float(f)) => builder.append_value(f.to_string()),
+                    Some(DataValue::Bool(b)) => builder.append_value(b.to_string()),
+                    Some(DataValue::Null) | None => builder.append_null(),
+                    _ => builder.append_null(),
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
+        DataType::Int64 => {
+            let mut builder = Int64Builder::with_capacity(num_rows);
+            for row in dataset.rows() {
+                match row.get(&field.name) {
+                    Some(DataValue::Int(i)) => builder.append_value(*i),
+                    Some(DataValue::Float(f)) => builder.append_value(*f as i64),
+                    Some(DataValue::Null) | None => builder.append_null(),
+                    _ => builder.append_null(),
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
+        DataType::Float64 => {
+            let mut builder = Float64Builder::with_capacity(num_rows);
+            for row in dataset.rows() {
+                match row.get(&field.name) {
+                    Some(DataValue::Float(f)) => builder.append_value(*f),
+                    Some(DataValue::Int(i)) => builder.append_value(*i as f64),
+                    Some(DataValue::Null) | None => builder.append_null(),
+                    _ => builder.append_null(),
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
+        DataType::Boolean => {
+            let mut builder = BooleanBuilder::with_capacity(num_rows);
+            for row in dataset.rows() {
+                match row.get(&field.name) {
+                    Some(DataValue::Bool(b)) => builder.append_value(*b),
+                    Some(DataValue::Null) | None => builder.append_null(),
+                    _ => builder.append_null(),
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
+        _ => {
+            // Fallback: store as Utf8
+            let mut builder = StringBuilder::with_capacity(num_rows, num_rows * 32);
+            for row in dataset.rows() {
+                match row.get(&field.name) {
+                    Some(DataValue::Null) | None => builder.append_null(),
+                    Some(v) => builder.append_value(format!("{:?}", v)),
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
     }
 }
 
