@@ -4,7 +4,8 @@
 //! checks including schema, constraints, quality checks, and custom validations.
 
 use crate::{
-    ConstraintValidator, CustomValidator, DataSet, MlValidator, QualityValidator, SchemaValidator,
+    ConstraintValidator, CustomValidator, DataFusionEngine, DataSet, MlValidator, QualityValidator,
+    SchemaValidator,
 };
 use contracts_core::{
     Contract, ContractValidator, ValidationContext, ValidationReport, ValidationStats,
@@ -45,6 +46,7 @@ pub struct DataValidator {
     quality_validator: QualityValidator,
     custom_validator: CustomValidator,
     ml_validator: MlValidator,
+    datafusion_engine: DataFusionEngine,
 }
 
 impl DataValidator {
@@ -56,7 +58,33 @@ impl DataValidator {
             quality_validator: QualityValidator::new(),
             custom_validator: CustomValidator::new(),
             ml_validator: MlValidator::new(),
+            datafusion_engine: DataFusionEngine::new(),
         }
+    }
+
+    /// Validates a contract against a dataset using the DataFusion-backed engine
+    /// for schema, constraint, and quality evaluation.
+    pub async fn validate_with_data_async(
+        &mut self,
+        contract: &Contract,
+        dataset: &DataSet,
+        context: &ValidationContext,
+    ) -> ValidationReport {
+        let dataset_to_validate = self.sample_dataset(dataset, context);
+        let mut report = self
+            .datafusion_engine
+            .validate(contract, &dataset_to_validate, context)
+            .await;
+
+        self.apply_custom_and_ml_checks(
+            contract,
+            &dataset_to_validate,
+            context,
+            &mut report.errors,
+            &mut report.warnings,
+        );
+        report.passed = report.errors.is_empty();
+        report
     }
 
     /// Validates a contract against a dataset.
@@ -83,12 +111,7 @@ impl DataValidator {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
-        // Sample dataset if needed
-        let dataset_to_validate = if let Some(sample_size) = context.sample_size {
-            dataset.sample(sample_size)
-        } else {
-            dataset.clone()
-        };
+        let dataset_to_validate = self.sample_dataset(dataset, context);
 
         // 1. Schema validation (always runs)
         let schema_errors = self
@@ -124,32 +147,66 @@ impl DataValidator {
             warnings.extend(quality_errors.iter().map(|e| e.to_string()));
         }
 
-        // 4. Custom checks and freshness
-        let custom_errors = self
-            .custom_validator
-            .validate(contract, &dataset_to_validate);
+        self.apply_custom_and_ml_checks(
+            contract,
+            &dataset_to_validate,
+            context,
+            &mut errors,
+            &mut warnings,
+        );
 
-        // Custom check errors follow the severity defined in the check
-        // For now, treat as warnings in non-strict mode
-        if context.strict {
-            errors.extend(custom_errors.iter().map(|e| e.to_string()));
+        self.build_report(errors, warnings, contract, &dataset_to_validate, start)
+    }
+
+    fn sample_dataset(&self, dataset: &DataSet, context: &ValidationContext) -> DataSet {
+        if let Some(sample_size) = context.sample_size {
+            dataset.sample(sample_size)
         } else {
-            warnings.extend(custom_errors.iter().map(|e| e.to_string()));
+            dataset.clone()
+        }
+    }
+
+    fn apply_custom_and_ml_checks(
+        &self,
+        contract: &Contract,
+        dataset: &DataSet,
+        context: &ValidationContext,
+        errors: &mut Vec<String>,
+        warnings: &mut Vec<String>,
+    ) {
+        if context.schema_only {
+            return;
         }
 
-        // 5. ML-specific checks
+        let freshness_errors = self
+            .custom_validator
+            .validate_freshness_only(contract, dataset);
+        if context.strict {
+            errors.extend(freshness_errors.iter().map(|e| e.to_string()));
+        } else {
+            warnings.extend(freshness_errors.iter().map(|e| e.to_string()));
+        }
+
+        for (severity, error) in self.custom_validator.validate_custom_checks_only(contract) {
+            match severity.as_deref() {
+                Some("error") => errors.push(error.to_string()),
+                Some("warning") | Some("info") => warnings.push(error.to_string()),
+                Some(_) => warnings.push(error.to_string()),
+                None if context.strict => errors.push(error.to_string()),
+                None => warnings.push(error.to_string()),
+            }
+        }
+
         if let Some(ref qc) = contract.quality_checks
             && let Some(ref ml) = qc.ml_checks
         {
-            let ml_errors = self.ml_validator.validate(ml, &dataset_to_validate);
+            let ml_errors = self.ml_validator.validate(ml, dataset);
             if context.strict {
                 errors.extend(ml_errors.iter().map(|e| e.to_string()));
             } else {
                 warnings.extend(ml_errors.iter().map(|e| e.to_string()));
             }
         }
-
-        self.build_report(errors, warnings, contract, &dataset_to_validate, start)
     }
 
     /// Builds a validation report from collected errors and warnings.
@@ -276,8 +333,8 @@ mod tests {
     use super::*;
     use crate::DataValue;
     use contracts_core::{
-        CompletenessCheck, ContractBuilder, DataFormat, FieldBuilder, FieldConstraints,
-        QualityChecks,
+        CompletenessCheck, ContractBuilder, CustomCheck, DataFormat, FieldBuilder,
+        FieldConstraints, QualityChecks,
     };
     use std::collections::HashMap;
 
@@ -520,5 +577,67 @@ mod tests {
         let validator = DataValidator::new();
         let report = validator.validate_definition(&contract);
         assert!(report.passed);
+    }
+
+    #[test]
+    fn test_custom_check_error_severity_overrides_non_strict_mode() {
+        let contract = ContractBuilder::new("test", "owner")
+            .location("s3://test")
+            .format(DataFormat::Iceberg)
+            .field(FieldBuilder::new("id", "string").nullable(false).build())
+            .quality_checks(QualityChecks {
+                completeness: None,
+                uniqueness: None,
+                freshness: None,
+                custom_checks: Some(vec![CustomCheck {
+                    name: "must_be_sql".to_string(),
+                    definition: "not sql".to_string(),
+                    severity: Some("error".to_string()),
+                }]),
+                ml_checks: None,
+            })
+            .build();
+
+        let mut row = HashMap::new();
+        row.insert("id".to_string(), DataValue::String("1".to_string()));
+
+        let dataset = DataSet::from_rows(vec![row]);
+        let context = ValidationContext::new();
+        let mut validator = DataValidator::new();
+
+        let report = validator.validate_with_data(&contract, &dataset, &context);
+        assert!(!report.passed);
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(report.warnings.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_async_validation_uses_datafusion_path() {
+        let contract = ContractBuilder::new("test", "owner")
+            .location("s3://test")
+            .format(DataFormat::Iceberg)
+            .field(
+                FieldBuilder::new("age", "int64")
+                    .nullable(false)
+                    .constraint(FieldConstraints::Range {
+                        min: 0.0,
+                        max: 120.0,
+                    })
+                    .build(),
+            )
+            .build();
+
+        let mut row = HashMap::new();
+        row.insert("age".to_string(), DataValue::Int(200));
+
+        let dataset = DataSet::from_rows(vec![row]);
+        let context = ValidationContext::new().with_strict(true);
+        let mut validator = DataValidator::new();
+
+        let report = validator
+            .validate_with_data_async(&contract, &dataset, &context)
+            .await;
+        assert!(!report.passed);
+        assert_eq!(report.errors.len(), 1);
     }
 }

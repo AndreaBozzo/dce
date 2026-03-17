@@ -44,19 +44,12 @@ impl DataFusionEngine {
             return self.build_report(errors, warnings, contract, dataset, start);
         }
 
-        // Sample if requested
-        let dataset = if let Some(size) = context.sample_size {
-            dataset.sample(size)
-        } else {
-            dataset.clone()
-        };
-
         // Build Arrow RecordBatch from dataset
-        let batch = match self.dataset_to_record_batch(contract, &dataset) {
+        let batch = match self.dataset_to_record_batch(contract, dataset) {
             Ok(b) => b,
             Err(e) => {
                 errors.push(format!("Failed to create Arrow batch: {e}"));
-                return self.build_report(errors, warnings, contract, &dataset, start);
+                return self.build_report(errors, warnings, contract, dataset, start);
             }
         };
 
@@ -64,7 +57,7 @@ impl DataFusionEngine {
         let ctx = SessionContext::new();
         if let Err(e) = ctx.register_batch("data", batch) {
             errors.push(format!("Failed to register table: {e}"));
-            return self.build_report(errors, warnings, contract, &dataset, start);
+            return self.build_report(errors, warnings, contract, dataset, start);
         }
 
         // --- 1. Schema / nullability checks ---
@@ -72,7 +65,7 @@ impl DataFusionEngine {
         errors.extend(null_errs);
 
         if context.strict && !errors.is_empty() {
-            return self.build_report(errors, warnings, contract, &dataset, start);
+            return self.build_report(errors, warnings, contract, dataset, start);
         }
 
         // --- 2. Field constraints ---
@@ -80,7 +73,7 @@ impl DataFusionEngine {
         errors.extend(constraint_errs);
 
         if context.schema_only {
-            return self.build_report(errors, warnings, contract, &dataset, start);
+            return self.build_report(errors, warnings, contract, dataset, start);
         }
 
         // --- 3. Quality checks ---
@@ -93,7 +86,7 @@ impl DataFusionEngine {
             }
         }
 
-        self.build_report(errors, warnings, contract, &dataset, start)
+        self.build_report(errors, warnings, contract, dataset, start)
     }
 
     // -----------------------------------------------------------------------

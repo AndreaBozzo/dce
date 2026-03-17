@@ -5,7 +5,8 @@
 //! - TemporalSplit: Validates chronological ordering between splits
 //! - ClassBalance: Checks that label distributions are not overly skewed
 
-use crate::{DataSet, DataValue, ValidationError};
+use crate::{DataSet, DataValue, ValidationError, parse_timestamp};
+use chrono::{DateTime, Utc};
 use contracts_core::{ClassBalanceCheck, MlChecks, NoOverlapCheck, TemporalSplitCheck};
 use std::collections::{HashMap, HashSet};
 
@@ -48,19 +49,37 @@ impl MlValidator {
     ) -> Vec<ValidationError> {
         // Group composite keys by split value
         let mut keys_per_split: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut skipped_rows = 0usize;
 
         for row in dataset.rows() {
             let split_val = match row.get(&check.split_field) {
-                Some(v) => value_to_key(v),
+                Some(v) if !v.is_null() => value_to_key(v),
                 None => continue,
+                _ => {
+                    skipped_rows += 1;
+                    continue;
+                }
             };
 
-            let composite_key: String = check
-                .key_fields
-                .iter()
-                .map(|f| row.get(f).map(value_to_key).unwrap_or_default())
-                .collect::<Vec<_>>()
-                .join("|");
+            let mut key_parts = Vec::with_capacity(check.key_fields.len());
+            let mut missing_key = false;
+
+            for field in &check.key_fields {
+                match row.get(field) {
+                    Some(value) if !value.is_null() => key_parts.push(value_to_key(value)),
+                    _ => {
+                        missing_key = true;
+                        break;
+                    }
+                }
+            }
+
+            if missing_key {
+                skipped_rows += 1;
+                continue;
+            }
+
+            let composite_key = key_parts.join("|");
 
             keys_per_split
                 .entry(split_val)
@@ -70,6 +89,15 @@ impl MlValidator {
 
         let splits: Vec<&String> = keys_per_split.keys().collect();
         let mut errors = Vec::new();
+
+        if skipped_rows > 0 {
+            errors.push(ValidationError::quality_check(format!(
+                "NoOverlap check skipped {} row(s) with missing '{}' or key field(s) [{}]",
+                skipped_rows,
+                check.split_field,
+                check.key_fields.join(", "),
+            )));
+        }
 
         for i in 0..splits.len() {
             for j in (i + 1)..splits.len() {
@@ -98,13 +126,15 @@ impl MlValidator {
         check: &TemporalSplitCheck,
         dataset: &DataSet,
     ) -> Vec<ValidationError> {
-        let mut train_max: Option<String> = None;
-        let mut test_min: Option<String> = None;
+        let mut train_max: Option<DateTime<Utc>> = None;
+        let mut test_min: Option<DateTime<Utc>> = None;
+        let mut invalid_timestamps = 0usize;
 
         for row in dataset.rows() {
             let split_val = match row.get(&check.split_field) {
-                Some(v) => value_to_key(v),
+                Some(v) if !v.is_null() => value_to_key(v),
                 None => continue,
+                _ => continue,
             };
 
             let ts = match row.get(&check.timestamp_field) {
@@ -113,25 +143,54 @@ impl MlValidator {
                 _ => continue,
             };
 
-            if split_val == check.train_split {
-                if train_max.as_ref().is_none_or(|cur| ts > *cur) {
-                    train_max = Some(ts);
+            let parsed_ts = match parse_timestamp(&ts) {
+                Ok(parsed) => parsed,
+                Err(_) => {
+                    invalid_timestamps += 1;
+                    continue;
                 }
-            } else if split_val == check.test_split && test_min.as_ref().is_none_or(|cur| ts < *cur)
+            };
+
+            if split_val == check.train_split {
+                if train_max.as_ref().is_none_or(|cur| parsed_ts > *cur) {
+                    train_max = Some(parsed_ts);
+                }
+            } else if split_val == check.test_split
+                && test_min.as_ref().is_none_or(|cur| parsed_ts < *cur)
             {
-                test_min = Some(ts);
+                test_min = Some(parsed_ts);
             }
         }
 
         let mut errors = Vec::new();
 
+        if invalid_timestamps > 0 {
+            errors.push(ValidationError::quality_check(format!(
+                "TemporalSplit check skipped {} row(s) with invalid '{}' values",
+                invalid_timestamps, check.timestamp_field,
+            )));
+        }
+
         match (train_max, test_min) {
             (Some(train), Some(test)) if train > test => {
                 errors.push(ValidationError::quality_check(format!(
                     "TemporalSplit check failed: max '{}' timestamp ({}) > min '{}' timestamp ({})",
-                    check.train_split, train, check.test_split, test,
+                    check.train_split,
+                    train.to_rfc3339(),
+                    check.test_split,
+                    test.to_rfc3339(),
                 )));
             }
+            (None, _) => errors.push(ValidationError::quality_check(format!(
+                "TemporalSplit check could not evaluate '{}' because no valid '{}' values were found",
+                check.train_split,
+                check.timestamp_field,
+            ))),
+            (_, None) => errors.push(ValidationError::quality_check(format!(
+                "TemporalSplit check could not evaluate '{}' because no valid '{}' values were found",
+                check.test_split,
+                check.timestamp_field,
+            ))),
             _ => {}
         }
 
@@ -338,6 +397,68 @@ mod tests {
         let errors = v.validate(&checks, &ds);
         assert_eq!(errors.len(), 1);
         assert!(errors[0].to_string().contains("TemporalSplit"));
+    }
+
+    #[test]
+    fn test_temporal_split_parses_unix_epoch_values() {
+        let checks = MlChecks {
+            no_overlap: None,
+            temporal_split: Some(TemporalSplitCheck {
+                split_field: "split".into(),
+                timestamp_field: "ts".into(),
+                train_split: "train".into(),
+                test_split: "test".into(),
+            }),
+            class_balance: None,
+        };
+
+        let rows = vec![
+            make_row(vec![
+                ("split", DataValue::String("train".into())),
+                ("ts", DataValue::String("10".into())),
+            ]),
+            make_row(vec![
+                ("split", DataValue::String("test".into())),
+                ("ts", DataValue::String("9".into())),
+            ]),
+        ];
+
+        let ds = DataSet::from_rows(rows);
+        let v = MlValidator::new();
+        let errors = v.validate(&checks, &ds);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].to_string().contains("TemporalSplit"));
+    }
+
+    #[test]
+    fn test_no_overlap_skips_rows_with_missing_keys() {
+        let checks = MlChecks {
+            no_overlap: Some(NoOverlapCheck {
+                split_field: "split".into(),
+                key_fields: vec!["user_id".into()],
+            }),
+            temporal_split: None,
+            class_balance: None,
+        };
+
+        let rows = vec![
+            make_row(vec![("split", DataValue::String("train".into()))]),
+            make_row(vec![("split", DataValue::String("test".into()))]),
+            make_row(vec![
+                ("split", DataValue::String("train".into())),
+                ("user_id", DataValue::String("a".into())),
+            ]),
+            make_row(vec![
+                ("split", DataValue::String("test".into())),
+                ("user_id", DataValue::String("b".into())),
+            ]),
+        ];
+
+        let ds = DataSet::from_rows(rows);
+        let v = MlValidator::new();
+        let errors = v.validate(&checks, &ds);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].to_string().contains("skipped 2 row(s)"));
     }
 
     // ---- ClassBalance ----

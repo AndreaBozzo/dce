@@ -43,10 +43,63 @@ impl CustomValidator {
 
         // Custom checks - for now just validate syntax
         if let Some(custom_checks) = &quality_checks.custom_checks {
-            errors.extend(self.validate_custom_checks(custom_checks));
+            for check in custom_checks {
+                errors.extend(self.validate_single_custom_check(check));
+            }
         }
 
         errors
+    }
+
+    /// Validates freshness checks only.
+    pub fn validate_freshness_only(
+        &self,
+        contract: &Contract,
+        dataset: &DataSet,
+    ) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        let quality_checks = match &contract.quality_checks {
+            Some(qc) => qc,
+            None => return errors,
+        };
+
+        if dataset.is_empty() {
+            return errors;
+        }
+
+        if let Some(freshness) = &quality_checks.freshness
+            && let Err(err) = self.validate_freshness(freshness, dataset)
+        {
+            errors.push(err);
+        }
+
+        errors
+    }
+
+    /// Validates custom SQL checks and returns each failure with its declared severity.
+    pub fn validate_custom_checks_only(
+        &self,
+        contract: &Contract,
+    ) -> Vec<(Option<String>, ValidationError)> {
+        let mut outcomes = Vec::new();
+
+        let quality_checks = match &contract.quality_checks {
+            Some(qc) => qc,
+            None => return outcomes,
+        };
+
+        if let Some(custom_checks) = &quality_checks.custom_checks {
+            for check in custom_checks {
+                outcomes.extend(
+                    self.validate_single_custom_check(check)
+                        .into_iter()
+                        .map(|error| (check.severity.clone(), error)),
+                );
+            }
+        }
+
+        outcomes
     }
 
     /// Validates freshness requirements.
@@ -95,31 +148,28 @@ impl CustomValidator {
     }
 
     /// Validates custom SQL checks (syntax only, no execution).
-    fn validate_custom_checks(&self, checks: &[CustomCheck]) -> Vec<ValidationError> {
+    fn validate_single_custom_check(&self, check: &CustomCheck) -> Vec<ValidationError> {
         let mut errors = Vec::new();
 
-        for check in checks {
-            // Basic syntax validation
-            if check.definition.trim().is_empty() {
-                errors.push(ValidationError::custom_check(
-                    &check.name,
-                    "Custom check definition is empty",
-                ));
-                continue;
-            }
-
-            // Check if it looks like SQL (very basic validation)
-            let def_upper = check.definition.to_uppercase();
-            if !def_upper.contains("SELECT") && !def_upper.contains("COUNT") {
-                errors.push(ValidationError::custom_check(
-                    &check.name,
-                    "Custom check definition does not appear to be a SQL query",
-                ));
-            }
-
-            // Note: Full SQL parsing and execution is deferred to Phase 2
+        // Basic syntax validation
+        if check.definition.trim().is_empty() {
+            errors.push(ValidationError::custom_check(
+                &check.name,
+                "Custom check definition is empty",
+            ));
+            return errors;
         }
 
+        // Check if it looks like SQL (very basic validation)
+        let def_upper = check.definition.to_uppercase();
+        if !def_upper.contains("SELECT") && !def_upper.contains("COUNT") {
+            errors.push(ValidationError::custom_check(
+                &check.name,
+                "Custom check definition does not appear to be a SQL query",
+            ));
+        }
+
+        // Note: Full SQL parsing and execution is deferred to Phase 2
         errors
     }
 }
@@ -181,7 +231,7 @@ fn parse_duration(duration_str: &str) -> Result<Duration, ValidationError> {
 /// - Unix epoch milliseconds (e.g., "1705318200000")
 /// - Date only format (e.g., "2024-01-15")
 /// - Common datetime formats (e.g., "2024-01-15 10:30:00")
-fn parse_timestamp(ts_str: &str) -> Result<DateTime<Utc>, ValidationError> {
+pub(crate) fn parse_timestamp(ts_str: &str) -> Result<DateTime<Utc>, ValidationError> {
     let ts_str = ts_str.trim();
 
     // Try ISO 8601 / RFC 3339 format first (most common)

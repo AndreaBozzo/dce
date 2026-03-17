@@ -170,7 +170,9 @@ impl IcebergValidator {
 
         // Validate contract with data from Iceberg table
         let mut validator = DataValidator::new();
-        let report = validator.validate_with_data(contract, &dataset, context);
+        let report = validator
+            .validate_with_data_async(contract, &dataset, context)
+            .await;
 
         if report.passed {
             info!(
@@ -221,7 +223,9 @@ impl IcebergValidator {
 
         // Validate contract
         let mut validator = DataValidator::new();
-        let report = validator.validate_with_data(contract, &dataset, &schema_context);
+        let report = validator
+            .validate_with_data_async(contract, &dataset, &schema_context)
+            .await;
 
         if report.passed {
             info!(
