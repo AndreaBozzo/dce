@@ -7,7 +7,9 @@
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-v0.0.1--pre-orange.svg)](https://github.com/AndreaBozzo/dce)
 
-A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple table formats.
+A high-performance, Rust-native data contracts engine for modern data platforms. Define, validate, and enforce data quality contracts across multiple table formats
+
+Not ready for production use.
 
 **Origin**: DCE evolves from [dataprof](https://github.com/AndreaBozzo/dataprof), shifting from reactive profiling to proactive contract enforcement.
 
