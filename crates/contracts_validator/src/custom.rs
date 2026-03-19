@@ -202,8 +202,11 @@ impl CustomValidator {
             }
         };
 
+        // Use CAST to VARCHAR for the MAX to get a string we can parse.
+        // First try to compute MAX natively (preserves temporal ordering), then
+        // cast the result to string for extraction.
         let sql = format!(
-            "SELECT MAX(CAST(\"{}\" AS VARCHAR)) AS max_ts FROM data",
+            "SELECT CAST(MAX(\"{}\") AS VARCHAR) AS max_ts FROM data",
             freshness.metric
         );
 

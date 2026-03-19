@@ -25,7 +25,7 @@ use tracing::{debug, info, warn};
 pub struct IcebergValidator {
     config: IcebergConfig,
     catalog: Option<Box<dyn Catalog>>,
-    file_io: FileIO,
+    file_io: Option<FileIO>,
 }
 
 impl IcebergValidator {
@@ -53,8 +53,12 @@ impl IcebergValidator {
             _ => Some(load_catalog(&config).await?),
         };
 
-        // Initialize FileIO for accessing table files
-        let file_io = build_file_io(config.warehouse())?;
+        // Only build FileIO for FileIO catalog type (local filesystem access).
+        // Catalog-based paths (REST, Glue, HMS) handle storage access internally.
+        let file_io = match &config.catalog {
+            CatalogType::FileIO => Some(build_file_io(config.warehouse())?),
+            _ => None,
+        };
 
         Ok(Self {
             config,
@@ -92,7 +96,13 @@ impl IcebergValidator {
 
             info!("Loading table from metadata file: {}", metadata_path);
 
-            StaticTable::from_metadata_file(metadata_path, table_ident, self.file_io.clone())
+            let file_io = self.file_io.clone().ok_or_else(|| {
+                IcebergError::ConfigurationError(
+                    "FileIO not available for FileIO catalog type".to_string(),
+                )
+            })?;
+
+            StaticTable::from_metadata_file(metadata_path, table_ident, file_io)
                 .await
                 .map(|static_table| static_table.into_table())
                 .map_err(|e| IcebergError::TableNotFound(format!("Failed to load table: {}", e)))
@@ -230,6 +240,9 @@ impl IcebergValidator {
             ctx.sql(&format!(
                 "CREATE VIEW data AS SELECT * FROM iceberg_raw LIMIT {limit}"
             ))
+            .await
+            .map_err(|e| IcebergError::DataReadError(e.to_string()))?
+            .collect()
             .await
             .map_err(|e| IcebergError::DataReadError(e.to_string()))?;
         } else {

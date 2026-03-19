@@ -148,9 +148,15 @@ impl DataFusionEngine {
         ctx: &SessionContext,
         start: Instant,
     ) -> ValidationReport {
-        let records_validated = count_query(ctx, "SELECT COUNT(*) AS cnt FROM data")
-            .await
-            .unwrap_or(0) as usize;
+        let mut errors = errors;
+
+        let records_validated = match count_query(ctx, "SELECT COUNT(*) AS cnt FROM data").await {
+            Ok(count) => count as usize,
+            Err(e) => {
+                errors.push(format!("Failed to count validated records: {e}"));
+                0
+            }
+        };
 
         let constraints_evaluated: usize = contract
             .schema
