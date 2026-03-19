@@ -108,7 +108,7 @@ pub struct Field {
     /// Field name
     pub name: String,
 
-    /// Field data type (e.g., "string", "int64", "list<string>")
+    /// Field data type (e.g., "string", "int64", "`list<string>`")
     #[serde(rename = "type")]
     pub field_type: DataType,
 
