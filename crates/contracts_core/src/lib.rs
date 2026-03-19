@@ -16,7 +16,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use contracts_core::{Contract, Schema, Field, DataFormat};
+//! use contracts_core::{Contract, Schema, Field, DataFormat, DataType};
 //!
 //! let contract = Contract {
 //!     version: "1.0.0".to_string(),
@@ -27,7 +27,7 @@
 //!         fields: vec![
 //!             Field {
 //!                 name: "user_id".to_string(),
-//!                 field_type: "string".to_string(),
+//!                 field_type: DataType::from("string"),
 //!                 nullable: false,
 //!                 description: Some("Unique user identifier".to_string()),
 //!                 tags: None,
@@ -44,10 +44,12 @@
 
 pub mod builder;
 pub mod contract;
+pub mod datatype;
 pub mod error;
 pub mod validator;
 
 pub use builder::*;
 pub use contract::*;
+pub use datatype::*;
 pub use error::*;
 pub use validator::*;

@@ -7,10 +7,10 @@
 use crate::{DataSet, DataValue};
 use arrow_array::RecordBatch;
 use arrow_array::builder::*;
-use arrow_schema::{DataType, Field as ArrowField, Schema as ArrowSchema};
+use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use contracts_core::{
-    CompletenessCheck, Contract, Field, FieldConstraints, QualityChecks, UniquenessCheck,
-    ValidationContext, ValidationReport, ValidationStats,
+    CompletenessCheck, Contract, DataType, Field, FieldConstraints, PrimitiveType, QualityChecks,
+    UniquenessCheck, ValidationContext, ValidationReport, ValidationStats,
 };
 use datafusion::prelude::*;
 use std::sync::Arc;
@@ -370,8 +370,8 @@ pub(crate) fn dataset_to_record_batch(
     let arrow_fields: Vec<ArrowField> = fields
         .iter()
         .map(|f| {
-            let dt = dce_type_to_arrow(&f.field_type);
-            ArrowField::new(&f.name, dt, f.nullable)
+            let arrow_dt = dce_type_to_arrow(&f.field_type);
+            ArrowField::new(&f.name, arrow_dt, f.nullable)
         })
         .collect();
     let schema = Arc::new(ArrowSchema::new(arrow_fields));
@@ -411,9 +411,9 @@ fn build_arrow_column(
     dataset: &DataSet,
     num_rows: usize,
 ) -> Result<Arc<dyn arrow_array::Array>, String> {
-    let dt = dce_type_to_arrow(&field.field_type);
-    match dt {
-        DataType::Utf8 => {
+    let arrow_dt = dce_type_to_arrow(&field.field_type);
+    match arrow_dt {
+        ArrowDataType::Utf8 => {
             let mut builder = StringBuilder::with_capacity(num_rows, num_rows * 32);
             for row in dataset.rows() {
                 match row.get(&field.name) {
@@ -428,7 +428,7 @@ fn build_arrow_column(
             }
             Ok(Arc::new(builder.finish()))
         }
-        DataType::Int64 => {
+        ArrowDataType::Int64 => {
             let mut builder = Int64Builder::with_capacity(num_rows);
             for row in dataset.rows() {
                 match row.get(&field.name) {
@@ -440,7 +440,7 @@ fn build_arrow_column(
             }
             Ok(Arc::new(builder.finish()))
         }
-        DataType::Float64 => {
+        ArrowDataType::Float64 => {
             let mut builder = Float64Builder::with_capacity(num_rows);
             for row in dataset.rows() {
                 match row.get(&field.name) {
@@ -452,7 +452,7 @@ fn build_arrow_column(
             }
             Ok(Arc::new(builder.finish()))
         }
-        DataType::Boolean => {
+        ArrowDataType::Boolean => {
             let mut builder = BooleanBuilder::with_capacity(num_rows);
             for row in dataset.rows() {
                 match row.get(&field.name) {
@@ -477,19 +477,53 @@ fn build_arrow_column(
     }
 }
 
-/// Map a DCE type string to an Arrow DataType.
-fn dce_type_to_arrow(type_str: &str) -> DataType {
-    match type_str.to_lowercase().as_str() {
-        "string" | "varchar" | "text" => DataType::Utf8,
-        "int" | "int32" | "integer" => DataType::Int64,
-        "int64" | "long" | "bigint" => DataType::Int64,
-        "float" | "float32" => DataType::Float64,
-        "float64" | "double" => DataType::Float64,
-        "boolean" | "bool" => DataType::Boolean,
-        "timestamp" | "datetime" => DataType::Utf8, // store as string; DataFusion casts as needed
-        t if t.starts_with("map") || t.starts_with("list") || t.starts_with("array") => {
-            DataType::Utf8
+/// Map a DCE DataType to an Arrow DataType.
+fn dce_type_to_arrow(dt: &DataType) -> ArrowDataType {
+    match dt {
+        DataType::Primitive(p) => match p {
+            PrimitiveType::String | PrimitiveType::Uuid => ArrowDataType::Utf8,
+            PrimitiveType::Int32 => ArrowDataType::Int64,
+            PrimitiveType::Int64 => ArrowDataType::Int64,
+            PrimitiveType::Float32 => ArrowDataType::Float64,
+            PrimitiveType::Float64 => ArrowDataType::Float64,
+            PrimitiveType::Boolean => ArrowDataType::Boolean,
+            PrimitiveType::Timestamp | PrimitiveType::Date | PrimitiveType::Time => {
+                ArrowDataType::Utf8
+            }
+            PrimitiveType::Decimal | PrimitiveType::Binary => ArrowDataType::Utf8,
+        },
+        DataType::List { element_type, .. } => {
+            let inner = dce_type_to_arrow(element_type);
+            ArrowDataType::List(Arc::new(ArrowField::new("item", inner, true)))
         }
-        _ => DataType::Utf8,
+        DataType::Map {
+            key_type,
+            value_type,
+            ..
+        } => {
+            let k = dce_type_to_arrow(key_type);
+            let v = dce_type_to_arrow(value_type);
+            ArrowDataType::Map(
+                Arc::new(ArrowField::new(
+                    "entries",
+                    ArrowDataType::Struct(
+                        vec![
+                            ArrowField::new("key", k, false),
+                            ArrowField::new("value", v, true),
+                        ]
+                        .into(),
+                    ),
+                    false,
+                )),
+                false,
+            )
+        }
+        DataType::Struct { fields } => {
+            let arrow_fields: Vec<ArrowField> = fields
+                .iter()
+                .map(|f| ArrowField::new(&f.name, dce_type_to_arrow(&f.data_type), f.nullable))
+                .collect();
+            ArrowDataType::Struct(arrow_fields.into())
+        }
     }
 }

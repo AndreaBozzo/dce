@@ -4,8 +4,8 @@
 //! and their components with a fluent API.
 
 use crate::{
-    CompletenessCheck, Contract, CustomCheck, DataFormat, Field, FieldConstraints, FreshnessCheck,
-    MlChecks, QualityChecks, SLA, Schema, UniquenessCheck,
+    CompletenessCheck, Contract, CustomCheck, DataFormat, DataType, Field, FieldConstraints,
+    FreshnessCheck, MlChecks, QualityChecks, SLA, Schema, UniquenessCheck,
 };
 
 /// Builder for creating a `Contract`.
@@ -136,7 +136,7 @@ impl ContractBuilder {
 #[derive(Debug, Default)]
 pub struct FieldBuilder {
     name: Option<String>,
-    field_type: Option<String>,
+    field_type: Option<DataType>,
     nullable: bool,
     description: Option<String>,
     tags: Option<Vec<String>>,
@@ -149,8 +149,8 @@ impl FieldBuilder {
     /// # Arguments
     ///
     /// * `name` - Field name
-    /// * `field_type` - Field type (e.g., "string", "int64")
-    pub fn new(name: impl Into<String>, field_type: impl Into<String>) -> Self {
+    /// * `field_type` - Field type (e.g., "string", "int64", or a `DataType` value)
+    pub fn new(name: impl Into<String>, field_type: impl Into<DataType>) -> Self {
         Self {
             name: Some(name.into()),
             field_type: Some(field_type.into()),
@@ -367,7 +367,7 @@ mod tests {
         let field = FieldBuilder::new("user_id", "string").build();
 
         assert_eq!(field.name, "user_id");
-        assert_eq!(field.field_type, "string");
+        assert_eq!(field.field_type, DataType::from("string"));
         assert!(field.nullable); // Default is true
         assert!(field.description.is_none());
         assert!(field.tags.is_none());

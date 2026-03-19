@@ -246,7 +246,7 @@ schema:
 
         let user_id = &contract.schema.fields[0];
         assert_eq!(user_id.name, "user_id");
-        assert_eq!(user_id.field_type, "string");
+        assert_eq!(user_id.field_type, contracts_core::DataType::from("string"));
         assert!(!user_id.nullable);
         assert_eq!(user_id.description, Some("Unique user ID".to_string()));
         assert_eq!(
@@ -421,7 +421,7 @@ nullable = true
 
         let user_id = &contract.schema.fields[0];
         assert_eq!(user_id.name, "user_id");
-        assert_eq!(user_id.field_type, "string");
+        assert_eq!(user_id.field_type, contracts_core::DataType::from("string"));
         assert!(!user_id.nullable);
     }
 
@@ -505,7 +505,7 @@ name = "test"
             schema: Schema {
                 fields: vec![Field {
                     name: "id".to_string(),
-                    field_type: "string".to_string(),
+                    field_type: contracts_core::DataType::from("string"),
                     nullable: false,
                     description: Some("ID field".to_string()),
                     tags: Some(vec!["key".to_string()]),

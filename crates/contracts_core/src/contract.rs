@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::datatype::DataType;
+
 /// A data contract defining the structure, quality, and SLA for a dataset.
 ///
 /// A `Contract` is the main entry point for defining a data contract. It contains
@@ -106,9 +108,9 @@ pub struct Field {
     /// Field name
     pub name: String,
 
-    /// Field data type (e.g., "string", "int64", "timestamp")
+    /// Field data type (e.g., "string", "int64", "list<string>")
     #[serde(rename = "type")]
-    pub field_type: String,
+    pub field_type: DataType,
 
     /// Whether the field can contain null values
     pub nullable: bool,
