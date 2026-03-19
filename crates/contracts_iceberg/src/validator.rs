@@ -161,19 +161,93 @@ impl IcebergValidator {
             return self.validate_schema_only(contract, context).await;
         }
 
+        #[cfg(feature = "native-datafusion")]
+        {
+            return self.validate_table_native(contract, context).await;
+        }
+
+        #[cfg(not(feature = "native-datafusion"))]
+        {
+            return self.validate_table_dataset(contract, context).await;
+        }
+    }
+
+    /// Validates using the DataSet-based path (legacy).
+    ///
+    /// Reads data into an intermediate `DataSet`, then converts to Arrow for
+    /// DataFusion validation. Used when the `native-datafusion` feature is disabled.
+    #[cfg(not(feature = "native-datafusion"))]
+    async fn validate_table_dataset(
+        &self,
+        contract: &Contract,
+        context: &ValidationContext,
+    ) -> Result<ValidationReport, IcebergError> {
         let sample_size = context.sample_size.unwrap_or(1000);
 
-        // Read sample data from the table
         let dataset = self.read_sample_data(sample_size).await?;
 
         info!("Read {} rows for validation", dataset.len());
 
-        // Validate contract with data from Iceberg table
         let mut validator = DataValidator::new();
         let report = validator
             .validate_with_data_async(contract, &dataset, context)
             .await;
 
+        self.log_result(&report);
+
+        Ok(report)
+    }
+
+    /// Validates by registering the Iceberg table directly with DataFusion.
+    ///
+    /// This zero-copy path avoids the intermediate `DataSet` representation,
+    /// enabling predicate/projection pushdown and streaming execution.
+    #[cfg(feature = "native-datafusion")]
+    async fn validate_table_native(
+        &self,
+        contract: &Contract,
+        context: &ValidationContext,
+    ) -> Result<ValidationReport, IcebergError> {
+        use datafusion::prelude::SessionContext;
+        use iceberg_datafusion::IcebergStaticTableProvider;
+        use std::sync::Arc;
+
+        info!("Using native DataFusion path for Iceberg table validation");
+
+        let table = self.load_table().await?;
+
+        let provider = IcebergStaticTableProvider::try_new_from_table(table)
+            .await
+            .map_err(|e| {
+                IcebergError::DataReadError(format!("Failed to create Iceberg table provider: {e}"))
+            })?;
+
+        let ctx = SessionContext::new();
+
+        if let Some(limit) = context.sample_size {
+            ctx.register_table("iceberg_raw", Arc::new(provider))
+                .map_err(|e| IcebergError::DataReadError(e.to_string()))?;
+            ctx.sql(&format!(
+                "CREATE VIEW data AS SELECT * FROM iceberg_raw LIMIT {limit}"
+            ))
+            .await
+            .map_err(|e| IcebergError::DataReadError(e.to_string()))?;
+        } else {
+            ctx.register_table("data", Arc::new(provider))
+                .map_err(|e| IcebergError::DataReadError(e.to_string()))?;
+        }
+
+        let mut validator = DataValidator::new();
+        let report = validator
+            .validate_with_context(contract, &ctx, context)
+            .await;
+
+        self.log_result(&report);
+
+        Ok(report)
+    }
+
+    fn log_result(&self, report: &ValidationReport) {
         if report.passed {
             info!(
                 "Validation passed for table: {}.{}",
@@ -188,8 +262,6 @@ impl IcebergValidator {
                 report.errors.len()
             );
         }
-
-        Ok(report)
     }
 
     /// Validates only the schema of an Iceberg table against a contract (no data reading).

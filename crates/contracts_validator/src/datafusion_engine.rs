@@ -89,6 +89,110 @@ impl DataFusionEngine {
         self.build_report(errors, warnings, contract, dataset, start)
     }
 
+    /// Validate against a `SessionContext` that already has a `"data"` table registered.
+    ///
+    /// This is the zero-copy native path: no `DataSet` materialisation is needed.
+    /// The caller is responsible for registering the table before calling this method.
+    pub async fn validate_with_context(
+        &self,
+        contract: &Contract,
+        ctx: &SessionContext,
+        context: &ValidationContext,
+    ) -> ValidationReport {
+        let start = Instant::now();
+        let mut errors: Vec<String> = Vec::new();
+        let mut warnings: Vec<String> = Vec::new();
+
+        // --- 1. Schema / nullability checks ---
+        let null_errs = self.check_nullability(contract, ctx).await;
+        errors.extend(null_errs);
+
+        if context.strict && !errors.is_empty() {
+            return self
+                .build_report_from_context(errors, warnings, contract, ctx, start)
+                .await;
+        }
+
+        // --- 2. Field constraints ---
+        let constraint_errs = self.check_constraints(contract, ctx).await;
+        errors.extend(constraint_errs);
+
+        if context.schema_only {
+            return self
+                .build_report_from_context(errors, warnings, contract, ctx, start)
+                .await;
+        }
+
+        // --- 3. Quality checks ---
+        if let Some(ref qc) = contract.quality_checks {
+            let qc_errs = self.check_quality(qc, ctx).await;
+            if context.strict {
+                errors.extend(qc_errs);
+            } else {
+                warnings.extend(qc_errs);
+            }
+        }
+
+        self.build_report_from_context(errors, warnings, contract, ctx, start)
+            .await
+    }
+
+    /// Build a validation report when using the native context path.
+    ///
+    /// Obtains the row count via `SELECT COUNT(*) FROM data` instead of `dataset.len()`.
+    async fn build_report_from_context(
+        &self,
+        errors: Vec<String>,
+        warnings: Vec<String>,
+        contract: &Contract,
+        ctx: &SessionContext,
+        start: Instant,
+    ) -> ValidationReport {
+        let records_validated = count_query(ctx, "SELECT COUNT(*) AS cnt FROM data")
+            .await
+            .unwrap_or(0) as usize;
+
+        let constraints_evaluated: usize = contract
+            .schema
+            .fields
+            .iter()
+            .map(|f| f.constraints.as_ref().map(|c| c.len()).unwrap_or(0))
+            .sum();
+
+        let quality_checks_count = contract
+            .quality_checks
+            .as_ref()
+            .map(|qc| {
+                let mut n = 0usize;
+                if qc.completeness.is_some() {
+                    n += 1;
+                }
+                if qc.uniqueness.is_some() {
+                    n += 1;
+                }
+                if qc.freshness.is_some() {
+                    n += 1;
+                }
+                if let Some(ref c) = qc.custom_checks {
+                    n += c.len();
+                }
+                n
+            })
+            .unwrap_or(0);
+
+        ValidationReport {
+            passed: errors.is_empty(),
+            errors,
+            warnings,
+            stats: ValidationStats {
+                records_validated,
+                fields_checked: contract.schema.fields.len(),
+                constraints_evaluated: constraints_evaluated + quality_checks_count,
+                duration_ms: start.elapsed().as_millis() as u64,
+            },
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Nullability
     // -----------------------------------------------------------------------

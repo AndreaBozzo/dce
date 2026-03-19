@@ -4,7 +4,7 @@ use crate::{
     IcebergError,
     config::{CatalogType, IcebergConfig},
 };
-use iceberg::io::{FileIO, FileIOBuilder};
+use iceberg::io::FileIO;
 use iceberg::{Catalog, CatalogBuilder, TableIdent};
 
 #[cfg(feature = "glue-catalog")]
@@ -215,9 +215,13 @@ pub fn build_file_io(warehouse: Option<&str>) -> Result<FileIO, IcebergError> {
 
     info!("Building FileIO for scheme: {}", scheme);
 
-    FileIOBuilder::new(scheme)
-        .build()
-        .map_err(|e| IcebergError::ConnectionError(format!("Failed to build FileIO: {}", e)))
+    match scheme {
+        "file" => Ok(FileIO::new_with_fs()),
+        _ => Err(IcebergError::UnsupportedOperation(format!(
+            "Unsupported FileIO scheme '{}'. For S3/GCS/Azure, use a catalog-based approach instead.",
+            scheme
+        ))),
+    }
 }
 
 #[cfg(test)]

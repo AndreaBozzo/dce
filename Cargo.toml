@@ -49,7 +49,8 @@ tokio = { version = "1.50", features = ["full"] }
 datafusion = "52.3.0"
 
 # Iceberg support
-iceberg = "0.8.0"
+iceberg = "0.9.0"
+iceberg-datafusion = "0.9.0"
 
 # Arrow (for Iceberg data processing)
 arrow-array = "57.3.0"
