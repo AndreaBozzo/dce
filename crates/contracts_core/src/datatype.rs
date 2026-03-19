@@ -104,27 +104,36 @@ impl fmt::Display for DataType {
 // ---------------------------------------------------------------------------
 
 /// Parse a type string into a `DataType`.
+///
+/// Type keywords are case-insensitive, but struct field names preserve their original casing.
 pub fn parse_data_type(input: &str) -> Result<DataType, std::string::String> {
-    let input = input.trim().to_lowercase();
+    let input = input.trim();
     if input.is_empty() {
         return Err("empty type string".into());
     }
-    parse_type_inner(&input)
+    parse_type_inner(input)
 }
 
 fn parse_type_inner(input: &str) -> Result<DataType, String> {
-    if let Some(inner) =
-        strip_wrapper(input, "list<", ">").or_else(|| strip_wrapper(input, "array<", ">"))
+    let lower = input.to_lowercase();
+
+    if let Some(_inner) =
+        strip_wrapper(&lower, "list<", ">").or_else(|| strip_wrapper(&lower, "array<", ">"))
     {
-        let element = parse_type_inner(inner.trim())?;
+        // Use the original casing for the inner content
+        let prefix_len = lower.find('<').unwrap() + 1;
+        let original_inner = &input[prefix_len..input.len() - 1];
+        let element = parse_type_inner(original_inner.trim())?;
         return Ok(DataType::List {
             element_type: Box::new(element),
             contains_null: true,
         });
     }
 
-    if let Some(inner) = strip_wrapper(input, "map<", ">") {
-        let parts = split_at_depth_zero(inner, ',')?;
+    if strip_wrapper(&lower, "map<", ">").is_some() {
+        let prefix_len = lower.find('<').unwrap() + 1;
+        let original_inner = &input[prefix_len..input.len() - 1];
+        let parts = split_at_depth_zero(original_inner, ',')?;
         if parts.len() != 2 {
             return Err(format!(
                 "map type expects exactly 2 type parameters, got {}: '{}'",
@@ -141,14 +150,17 @@ fn parse_type_inner(input: &str) -> Result<DataType, String> {
         });
     }
 
-    if let Some(inner) = strip_wrapper(input, "struct<", ">") {
-        let parts = split_at_depth_zero(inner, ',')?;
+    if strip_wrapper(&lower, "struct<", ">").is_some() {
+        let prefix_len = lower.find('<').unwrap() + 1;
+        let original_inner = &input[prefix_len..input.len() - 1];
+        let parts = split_at_depth_zero(original_inner, ',')?;
         let mut fields = Vec::with_capacity(parts.len());
         for part in parts {
             let part = part.trim();
             let colon_pos = part
                 .find(':')
                 .ok_or_else(|| format!("struct field '{}' missing ':' separator", part))?;
+            // Preserve original field name casing
             let name = part[..colon_pos].trim().to_string();
             let type_str = part[colon_pos + 1..].trim();
             let data_type = parse_type_inner(type_str)?;
@@ -161,8 +173,8 @@ fn parse_type_inner(input: &str) -> Result<DataType, String> {
         return Ok(DataType::Struct { fields });
     }
 
-    // Primitive type with alias resolution
-    match input {
+    // Primitive type with alias resolution (case-insensitive)
+    match lower.as_str() {
         "string" | "varchar" | "text" => Ok(DataType::Primitive(PrimitiveType::String)),
         "int" | "int32" | "integer" => Ok(DataType::Primitive(PrimitiveType::Int32)),
         "int64" | "long" | "bigint" => Ok(DataType::Primitive(PrimitiveType::Int64)),
@@ -175,8 +187,7 @@ fn parse_type_inner(input: &str) -> Result<DataType, String> {
         "decimal" => Ok(DataType::Primitive(PrimitiveType::Decimal)),
         "uuid" => Ok(DataType::Primitive(PrimitiveType::Uuid)),
         "binary" => Ok(DataType::Primitive(PrimitiveType::Binary)),
-        // Lenient: accept unknown types wrapped as String primitive to maintain backward compat
-        _ => Ok(DataType::Primitive(PrimitiveType::String)),
+        _ => Err(format!("unknown type: '{}'", input)),
     }
 }
 
@@ -232,7 +243,23 @@ fn split_at_depth_zero(input: &str, delimiter: char) -> Result<Vec<&str>, String
 }
 
 // ---------------------------------------------------------------------------
+// TryFrom — fallible conversion for external/untrusted input
+// ---------------------------------------------------------------------------
+
+impl std::str::FromStr for DataType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_data_type(s)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // From<&str> / From<String> — panicking conversion for builder ergonomics
+//
+// These are intentionally panicking: they are used only in builder APIs and
+// tests where type strings are compile-time literals. For untrusted input,
+// use `parse_data_type()` or `str::parse::<DataType>()` instead.
 // ---------------------------------------------------------------------------
 
 impl From<&str> for DataType {
@@ -475,6 +502,24 @@ mod tests {
                 contains_null: true,
             }
         );
+    }
+
+    #[test]
+    fn test_struct_preserves_field_name_casing() {
+        let dt = parse_data_type("struct<UserId:string,Age:int32>").unwrap();
+        match &dt {
+            DataType::Struct { fields } => {
+                assert_eq!(fields[0].name, "UserId");
+                assert_eq!(fields[1].name, "Age");
+            }
+            _ => panic!("expected Struct"),
+        }
+    }
+
+    #[test]
+    fn test_unknown_type_returns_error() {
+        assert!(parse_data_type("foobar").is_err());
+        assert!(parse_data_type("unknowntype").is_err());
     }
 
     #[test]

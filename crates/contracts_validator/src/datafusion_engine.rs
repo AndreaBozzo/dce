@@ -477,7 +477,12 @@ fn build_arrow_column(
     }
 }
 
-/// Map a DCE DataType to an Arrow DataType.
+/// Map a DCE DataType to an Arrow DataType for the DataSet-based validation path.
+///
+/// Complex types (List, Map, Struct) are represented as Utf8 (JSON-serialized)
+/// because `build_arrow_column` does not yet have native Arrow builders for them.
+/// When native Iceberg table registration is implemented (issue #8), the real
+/// Arrow types will be used directly without going through `DataSet`.
 fn dce_type_to_arrow(dt: &DataType) -> ArrowDataType {
     match dt {
         DataType::Primitive(p) => match p {
@@ -492,38 +497,9 @@ fn dce_type_to_arrow(dt: &DataType) -> ArrowDataType {
             }
             PrimitiveType::Decimal | PrimitiveType::Binary => ArrowDataType::Utf8,
         },
-        DataType::List { element_type, .. } => {
-            let inner = dce_type_to_arrow(element_type);
-            ArrowDataType::List(Arc::new(ArrowField::new("item", inner, true)))
-        }
-        DataType::Map {
-            key_type,
-            value_type,
-            ..
-        } => {
-            let k = dce_type_to_arrow(key_type);
-            let v = dce_type_to_arrow(value_type);
-            ArrowDataType::Map(
-                Arc::new(ArrowField::new(
-                    "entries",
-                    ArrowDataType::Struct(
-                        vec![
-                            ArrowField::new("key", k, false),
-                            ArrowField::new("value", v, true),
-                        ]
-                        .into(),
-                    ),
-                    false,
-                )),
-                false,
-            )
-        }
-        DataType::Struct { fields } => {
-            let arrow_fields: Vec<ArrowField> = fields
-                .iter()
-                .map(|f| ArrowField::new(&f.name, dce_type_to_arrow(&f.data_type), f.nullable))
-                .collect();
-            ArrowDataType::Struct(arrow_fields.into())
+        // Complex types: serialize as Utf8 until native builders are implemented
+        DataType::List { .. } | DataType::Map { .. } | DataType::Struct { .. } => {
+            ArrowDataType::Utf8
         }
     }
 }

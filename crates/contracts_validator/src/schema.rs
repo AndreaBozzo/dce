@@ -127,25 +127,53 @@ impl SchemaValidator {
                 // Lenient for date, time, decimal, uuid, binary — accept any value
                 _ => true,
             },
-            DataType::List { element_type, .. } => {
+            DataType::List {
+                element_type,
+                contains_null,
+            } => {
                 if let DataValue::List(items) = value {
-                    items
-                        .iter()
-                        .all(|item| item.is_null() || Self::type_matches(element_type, item))
+                    items.iter().all(|item| {
+                        if item.is_null() {
+                            *contains_null
+                        } else {
+                            Self::type_matches(element_type, item)
+                        }
+                    })
                 } else {
                     false
                 }
             }
-            DataType::Map { value_type, .. } => {
+            DataType::Map {
+                value_type,
+                value_contains_null,
+                ..
+            } => {
                 if let DataValue::Map(entries) = value {
-                    entries
-                        .values()
-                        .all(|v| v.is_null() || Self::type_matches(value_type, v))
+                    entries.values().all(|v| {
+                        if v.is_null() {
+                            *value_contains_null
+                        } else {
+                            Self::type_matches(value_type, v)
+                        }
+                    })
                 } else {
                     false
                 }
             }
-            DataType::Struct { .. } => matches!(value, DataValue::Map(_)),
+            DataType::Struct { fields } => {
+                if let DataValue::Map(entries) = value {
+                    fields.iter().all(|sf| {
+                        match entries.get(&sf.name) {
+                            Some(v) if v.is_null() => sf.nullable,
+                            Some(v) => Self::type_matches(&sf.data_type, v),
+                            // Missing fields are OK if nullable
+                            None => sf.nullable,
+                        }
+                    })
+                } else {
+                    false
+                }
+            }
         }
     }
 
