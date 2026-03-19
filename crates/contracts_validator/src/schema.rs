@@ -4,7 +4,7 @@
 //! including field presence, type checking, and nullability constraints.
 
 use crate::{DataRow, DataSet, DataValue, ValidationError};
-use contracts_core::{Contract, Field};
+use contracts_core::{Contract, DataType, Field, PrimitiveType};
 use std::collections::HashSet;
 
 /// Validates the schema of a dataset against a contract.
@@ -96,46 +96,85 @@ impl SchemaValidator {
         None
     }
 
-    /// Validates the type of a field value.
+    /// Validates the type of a field value, including recursive element validation.
     fn validate_type(
         &self,
         field: &Field,
         value: &DataValue,
         _row_idx: usize,
     ) -> Option<ValidationError> {
-        let expected_type = normalize_type(&field.field_type);
-        let actual_type = value.type_name();
-
-        // Type matching logic
-        let matches = match expected_type.as_str() {
-            "string" => matches!(value, DataValue::String(_)),
-            "int" | "int64" | "integer" | "long" => matches!(value, DataValue::Int(_)),
-            "float" | "float64" | "double" => {
-                matches!(value, DataValue::Float(_) | DataValue::Int(_))
-            }
-            "boolean" | "bool" => matches!(value, DataValue::Bool(_)),
-            "timestamp" | "datetime" => matches!(value, DataValue::Timestamp(_)),
-            "map" => matches!(value, DataValue::Map(_)),
-            "list" | "array" => matches!(value, DataValue::List(_)),
-            t if t.starts_with("map<") => matches!(value, DataValue::Map(_)),
-            t if t.starts_with("list<") || t.starts_with("array<") => {
-                matches!(value, DataValue::List(_))
-            }
-            _ => {
-                // Unknown type, be lenient and accept it
-                true
-            }
-        };
-
-        if !matches {
+        if !Self::type_matches(&field.field_type, value) {
             return Some(ValidationError::type_mismatch(
                 &field.name,
-                &field.field_type,
-                actual_type,
+                field.field_type.to_string(),
+                value.type_name(),
             ));
         }
-
         None
+    }
+
+    /// Recursively checks whether a value matches an expected DataType.
+    fn type_matches(expected: &DataType, value: &DataValue) -> bool {
+        match expected {
+            DataType::Primitive(p) => match p {
+                PrimitiveType::String => matches!(value, DataValue::String(_)),
+                PrimitiveType::Int32 | PrimitiveType::Int64 => matches!(value, DataValue::Int(_)),
+                PrimitiveType::Float32 | PrimitiveType::Float64 => {
+                    matches!(value, DataValue::Float(_) | DataValue::Int(_))
+                }
+                PrimitiveType::Boolean => matches!(value, DataValue::Bool(_)),
+                PrimitiveType::Timestamp => matches!(value, DataValue::Timestamp(_)),
+                // Lenient for date, time, decimal, uuid, binary — accept any value
+                _ => true,
+            },
+            DataType::List {
+                element_type,
+                contains_null,
+            } => {
+                if let DataValue::List(items) = value {
+                    items.iter().all(|item| {
+                        if item.is_null() {
+                            *contains_null
+                        } else {
+                            Self::type_matches(element_type, item)
+                        }
+                    })
+                } else {
+                    false
+                }
+            }
+            DataType::Map {
+                value_type,
+                value_contains_null,
+                ..
+            } => {
+                if let DataValue::Map(entries) = value {
+                    entries.values().all(|v| {
+                        if v.is_null() {
+                            *value_contains_null
+                        } else {
+                            Self::type_matches(value_type, v)
+                        }
+                    })
+                } else {
+                    false
+                }
+            }
+            DataType::Struct { fields } => {
+                if let DataValue::Map(entries) = value {
+                    fields.iter().all(|sf| {
+                        match entries.get(&sf.name) {
+                            Some(v) if v.is_null() => sf.nullable,
+                            Some(v) => Self::type_matches(&sf.data_type, v),
+                            // Missing fields are OK if nullable
+                            None => sf.nullable,
+                        }
+                    })
+                } else {
+                    false
+                }
+            }
+        }
     }
 
     /// Validates that all required fields are present in the schema.
@@ -165,11 +204,6 @@ impl Default for SchemaValidator {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Normalizes a type string for comparison.
-fn normalize_type(type_str: &str) -> String {
-    type_str.to_lowercase().trim().to_string()
 }
 
 #[cfg(test)]
@@ -320,13 +354,6 @@ mod tests {
 
         let errors = validator.validate_schema_definition(&contract);
         assert_eq!(errors.len(), 1);
-    }
-
-    #[test]
-    fn test_type_normalization() {
-        assert_eq!(normalize_type("STRING"), "string");
-        assert_eq!(normalize_type("  Int64  "), "int64");
-        assert_eq!(normalize_type("BOOLEAN"), "boolean");
     }
 
     #[test]

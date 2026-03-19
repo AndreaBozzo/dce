@@ -1,84 +1,76 @@
 //! Type conversion between Iceberg and DCE types.
 
 use crate::IcebergError;
+use contracts_core::{DataType, PrimitiveType as DcePrimitiveType, StructField as DceStructField};
 use contracts_validator::DataValue;
 use iceberg::spec::{PrimitiveType, Type as IcebergType};
 use tracing::warn;
 
-/// Converts an Iceberg type to a DCE type string.
+/// Converts an Iceberg type to a DCE `DataType`.
 ///
-/// Maps Iceberg's type system to the string-based type names used in DCE contracts.
-///
-/// # Intermediate Complex Type Support
-///
-/// Complex types are now represented with basic type information:
-/// - `Struct { field1: Int, field2: String }` → `"struct<field1:int32,field2:string>"`
-/// - `List<Int>` → `"list<int32>"`
-/// - `Map<String, Int>` → `"map<string,int32>"`
-///
-/// ## Current Limitations
-///
-/// 1. **No Deep Validation**: Only the top-level type structure is validated
-/// 2. **No Nested Constraints**: Cannot apply field-level constraints to struct fields
-/// 3. **String Matching Only**: Types are compared as strings, not structurally
-/// 4. **No Optional Fields**: Struct fields cannot be marked as optional
-///
-/// These will be addressed in Phase 2 with a proper type system representation.
-pub fn iceberg_type_to_dce_type(iceberg_type: &IcebergType) -> Result<String, IcebergError> {
+/// Maps Iceberg's type system to the structured DCE type representation,
+/// including recursive support for complex types (List, Map, Struct).
+pub fn iceberg_type_to_dce_type(iceberg_type: &IcebergType) -> Result<DataType, IcebergError> {
     match iceberg_type {
-        IcebergType::Primitive(prim) => primitive_type_to_string(prim),
+        IcebergType::Primitive(prim) => Ok(DataType::Primitive(primitive_to_dce(prim))),
 
         IcebergType::Struct(struct_type) => {
-            // Format: struct<field1:type1,field2:type2,...>
-            let fields: Result<Vec<String>, IcebergError> = struct_type
+            let fields = struct_type
                 .fields()
                 .iter()
                 .map(|field| {
-                    let field_type = iceberg_type_to_dce_type(&field.field_type)?;
-                    Ok(format!("{}:{}", field.name, field_type))
+                    let data_type = iceberg_type_to_dce_type(&field.field_type)?;
+                    Ok(DceStructField {
+                        name: field.name.clone(),
+                        data_type,
+                        nullable: !field.required,
+                    })
                 })
-                .collect();
+                .collect::<Result<Vec<_>, IcebergError>>()?;
 
-            Ok(format!("struct<{}>", fields?.join(",")))
+            Ok(DataType::Struct { fields })
         }
 
         IcebergType::List(list_type) => {
-            // Format: list<element_type>
             let element_type = iceberg_type_to_dce_type(&list_type.element_field.field_type)?;
-            Ok(format!("list<{}>", element_type))
+            Ok(DataType::List {
+                element_type: Box::new(element_type),
+                contains_null: !list_type.element_field.required,
+            })
         }
 
         IcebergType::Map(map_type) => {
-            // Format: map<key_type,value_type>
             let key_type = iceberg_type_to_dce_type(&map_type.key_field.field_type)?;
             let value_type = iceberg_type_to_dce_type(&map_type.value_field.field_type)?;
-            Ok(format!("map<{},{}>", key_type, value_type))
+            Ok(DataType::Map {
+                key_type: Box::new(key_type),
+                value_type: Box::new(value_type),
+                value_contains_null: !map_type.value_field.required,
+            })
         }
     }
 }
 
-/// Converts an Iceberg primitive type to a DCE type string.
-fn primitive_type_to_string(prim_type: &PrimitiveType) -> Result<String, IcebergError> {
-    let type_str = match prim_type {
-        PrimitiveType::Boolean => "boolean",
-        PrimitiveType::Int => "int32",
-        PrimitiveType::Long => "int64",
-        PrimitiveType::Float => "float32",
-        PrimitiveType::Double => "float64",
-        PrimitiveType::Decimal { .. } => "decimal",
-        PrimitiveType::Date => "date",
-        PrimitiveType::Time => "time",
-        PrimitiveType::Timestamp => "timestamp",
-        PrimitiveType::Timestamptz => "timestamp",
-        PrimitiveType::TimestampNs => "timestamp",
-        PrimitiveType::TimestamptzNs => "timestamp",
-        PrimitiveType::String => "string",
-        PrimitiveType::Uuid => "uuid",
-        PrimitiveType::Fixed(_) => "binary",
-        PrimitiveType::Binary => "binary",
-    };
-
-    Ok(type_str.to_string())
+/// Converts an Iceberg primitive type to a DCE PrimitiveType.
+fn primitive_to_dce(prim_type: &PrimitiveType) -> DcePrimitiveType {
+    match prim_type {
+        PrimitiveType::Boolean => DcePrimitiveType::Boolean,
+        PrimitiveType::Int => DcePrimitiveType::Int32,
+        PrimitiveType::Long => DcePrimitiveType::Int64,
+        PrimitiveType::Float => DcePrimitiveType::Float32,
+        PrimitiveType::Double => DcePrimitiveType::Float64,
+        PrimitiveType::Decimal { .. } => DcePrimitiveType::Decimal,
+        PrimitiveType::Date => DcePrimitiveType::Date,
+        PrimitiveType::Time => DcePrimitiveType::Time,
+        PrimitiveType::Timestamp => DcePrimitiveType::Timestamp,
+        PrimitiveType::Timestamptz => DcePrimitiveType::Timestamp,
+        PrimitiveType::TimestampNs => DcePrimitiveType::Timestamp,
+        PrimitiveType::TimestamptzNs => DcePrimitiveType::Timestamp,
+        PrimitiveType::String => DcePrimitiveType::String,
+        PrimitiveType::Uuid => DcePrimitiveType::Uuid,
+        PrimitiveType::Fixed(_) => DcePrimitiveType::Binary,
+        PrimitiveType::Binary => DcePrimitiveType::Binary,
+    }
 }
 
 /// Converts an Arrow/Iceberg value to a DCE DataValue.
@@ -314,24 +306,24 @@ mod tests {
     #[test]
     fn test_primitive_type_conversion() {
         assert_eq!(
-            primitive_type_to_string(&PrimitiveType::Boolean).unwrap(),
-            "boolean"
+            primitive_to_dce(&PrimitiveType::Boolean),
+            DcePrimitiveType::Boolean,
         );
         assert_eq!(
-            primitive_type_to_string(&PrimitiveType::Int).unwrap(),
-            "int32"
+            primitive_to_dce(&PrimitiveType::Int),
+            DcePrimitiveType::Int32,
         );
         assert_eq!(
-            primitive_type_to_string(&PrimitiveType::Long).unwrap(),
-            "int64"
+            primitive_to_dce(&PrimitiveType::Long),
+            DcePrimitiveType::Int64,
         );
         assert_eq!(
-            primitive_type_to_string(&PrimitiveType::String).unwrap(),
-            "string"
+            primitive_to_dce(&PrimitiveType::String),
+            DcePrimitiveType::String,
         );
         assert_eq!(
-            primitive_type_to_string(&PrimitiveType::Timestamp).unwrap(),
-            "timestamp"
+            primitive_to_dce(&PrimitiveType::Timestamp),
+            DcePrimitiveType::Timestamp,
         );
     }
 
@@ -339,9 +331,10 @@ mod tests {
     fn test_iceberg_type_conversion() {
         let result = iceberg_type_to_dce_type(&IcebergType::Primitive(PrimitiveType::Long));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "int64");
-
-        // TODO: Test List type conversion when we have proper ListType construction
+        assert_eq!(
+            result.unwrap(),
+            DataType::Primitive(DcePrimitiveType::Int64)
+        );
     }
 
     #[test]

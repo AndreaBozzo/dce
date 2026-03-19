@@ -65,7 +65,10 @@ mod tests {
 
         let contract_field = result.unwrap();
         assert_eq!(contract_field.name, "id");
-        assert_eq!(contract_field.field_type, "int64");
+        assert_eq!(
+            contract_field.field_type,
+            contracts_core::DataType::from("int64")
+        );
         assert!(!contract_field.nullable);
     }
 
@@ -78,7 +81,10 @@ mod tests {
 
         let contract_field = result.unwrap();
         assert_eq!(contract_field.name, "name");
-        assert_eq!(contract_field.field_type, "string");
+        assert_eq!(
+            contract_field.field_type,
+            contracts_core::DataType::from("string")
+        );
         assert!(contract_field.nullable);
     }
 
@@ -96,7 +102,10 @@ mod tests {
 
         let contract_field = result.unwrap();
         assert_eq!(contract_field.name, "created_at");
-        assert_eq!(contract_field.field_type, "timestamp");
+        assert_eq!(
+            contract_field.field_type,
+            contracts_core::DataType::from("timestamp")
+        );
         assert_eq!(
             contract_field.description,
             Some("Creation timestamp".to_string())
