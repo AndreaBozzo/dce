@@ -10,6 +10,7 @@ use crate::{
 use contracts_core::{
     Contract, ContractValidator, ValidationContext, ValidationReport, ValidationStats,
 };
+use datafusion::prelude::SessionContext;
 use std::time::Instant;
 
 /// Main validation engine for data contracts.
@@ -119,6 +120,73 @@ impl DataValidator {
                     None if context.strict => report.errors.push(error.to_string()),
                     None => report.warnings.push(error.to_string()),
                 }
+            }
+        }
+
+        report.passed = report.errors.is_empty();
+        report
+    }
+
+    /// Validates using a pre-registered DataFusion `SessionContext` (zero-copy path).
+    ///
+    /// The `SessionContext` must have a table named `"data"` already registered.
+    /// This skips the `DataSet` → Arrow conversion entirely.
+    ///
+    /// ML checks are not supported in this path and will be reported as warnings
+    /// when they are defined in the contract.
+    pub async fn validate_with_context(
+        &mut self,
+        contract: &Contract,
+        ctx: &SessionContext,
+        context: &ValidationContext,
+    ) -> ValidationReport {
+        let mut report = self
+            .datafusion_engine
+            .validate_with_context(contract, ctx, context)
+            .await;
+
+        if !context.schema_only {
+            // Freshness check via SQL
+            let freshness_errors = self
+                .custom_validator
+                .validate_freshness_with_context(contract, ctx)
+                .await;
+            if context.strict {
+                report
+                    .errors
+                    .extend(freshness_errors.iter().map(|e| e.to_string()));
+            } else {
+                report
+                    .warnings
+                    .extend(freshness_errors.iter().map(|e| e.to_string()));
+            }
+
+            // Custom SQL checks using the same context
+            let custom_outcomes = self
+                .custom_validator
+                .validate_custom_checks_with_context(contract, ctx)
+                .await;
+
+            for (severity, error) in custom_outcomes {
+                match severity.as_deref() {
+                    Some("error") => report.errors.push(error.to_string()),
+                    Some("warning") | Some("info") => report.warnings.push(error.to_string()),
+                    Some(_) => report.warnings.push(error.to_string()),
+                    None if context.strict => report.errors.push(error.to_string()),
+                    None => report.warnings.push(error.to_string()),
+                }
+            }
+
+            // ML checks require DataSet (row-level iteration) and are not
+            // supported in the native context path.
+            if let Some(ref qc) = contract.quality_checks
+                && qc.ml_checks.is_some()
+            {
+                report.warnings.push(
+                    "ML checks are not supported in the native DataFusion path \
+                     and were skipped. Use the DataSet-based path for ML validation."
+                        .to_string(),
+                );
             }
         }
 

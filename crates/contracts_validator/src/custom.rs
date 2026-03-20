@@ -5,6 +5,7 @@
 //! - Custom SQL checks: Syntax validation (execution deferred to Phase 2)
 
 use crate::{DataSet, ValidationError, datafusion_engine};
+use arrow_array::Array;
 use chrono::{DateTime, Duration, Utc};
 use contracts_core::{Contract, CustomCheck, Field, FreshnessCheck};
 use datafusion::prelude::*;
@@ -171,6 +172,156 @@ impl CustomValidator {
         }
 
         errors
+    }
+
+    /// Validates freshness using a pre-registered DataFusion `SessionContext`.
+    ///
+    /// Runs `SELECT MAX("metric") FROM data` instead of iterating rows.
+    pub async fn validate_freshness_with_context(
+        &self,
+        contract: &Contract,
+        ctx: &SessionContext,
+    ) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        let quality_checks = match &contract.quality_checks {
+            Some(qc) => qc,
+            None => return errors,
+        };
+
+        let freshness = match &quality_checks.freshness {
+            Some(f) => f,
+            None => return errors,
+        };
+
+        let max_delay = match parse_duration(&freshness.max_delay) {
+            Ok(d) => d,
+            Err(e) => {
+                errors.push(e);
+                return errors;
+            }
+        };
+
+        // Use CAST to VARCHAR for the MAX to get a string we can parse.
+        // First try to compute MAX natively (preserves temporal ordering), then
+        // cast the result to string for extraction.
+        let sql = format!(
+            "SELECT CAST(MAX(\"{}\") AS VARCHAR) AS max_ts FROM data",
+            freshness.metric
+        );
+
+        let df = match ctx.sql(&sql).await {
+            Ok(df) => df,
+            Err(e) => {
+                errors.push(ValidationError::quality_check(format!(
+                    "Freshness check SQL error: {e}"
+                )));
+                return errors;
+            }
+        };
+
+        let batches = match df.collect().await {
+            Ok(b) => b,
+            Err(e) => {
+                errors.push(ValidationError::quality_check(format!(
+                    "Freshness check execution error: {e}"
+                )));
+                return errors;
+            }
+        };
+
+        let max_ts_str = batches
+            .first()
+            .filter(|b| b.num_rows() > 0 && b.num_columns() > 0)
+            .and_then(|b| {
+                b.column(0)
+                    .as_any()
+                    .downcast_ref::<arrow_array::StringArray>()
+                    .and_then(|a| {
+                        if a.is_null(0) {
+                            None
+                        } else {
+                            Some(a.value(0).to_string())
+                        }
+                    })
+            });
+
+        let ts_str = match max_ts_str {
+            Some(s) => s,
+            None => {
+                errors.push(ValidationError::quality_check(format!(
+                    "Freshness check failed: no valid timestamps found in field '{}'",
+                    freshness.metric
+                )));
+                return errors;
+            }
+        };
+
+        match parse_timestamp(&ts_str) {
+            Ok(most_recent) => {
+                let now = Utc::now();
+                let age = now.signed_duration_since(most_recent);
+                if age > max_delay {
+                    errors.push(ValidationError::StaleData {
+                        delay: format_duration(age),
+                    });
+                }
+            }
+            Err(_) => {
+                errors.push(ValidationError::quality_check(format!(
+                    "Freshness check failed: could not parse max timestamp '{}' in field '{}'",
+                    ts_str, freshness.metric
+                )));
+            }
+        }
+
+        errors
+    }
+
+    /// Validates custom SQL checks using a pre-registered DataFusion `SessionContext`.
+    ///
+    /// Same as `validate_custom_checks_with_data` but skips the `DataSet` → Arrow
+    /// conversion since the table is already registered as `"data"`.
+    pub async fn validate_custom_checks_with_context(
+        &self,
+        contract: &Contract,
+        ctx: &SessionContext,
+    ) -> Vec<(Option<String>, ValidationError)> {
+        let quality_checks = match &contract.quality_checks {
+            Some(qc) => qc,
+            None => return Vec::new(),
+        };
+
+        let custom_checks = match &quality_checks.custom_checks {
+            Some(checks) => checks,
+            None => return Vec::new(),
+        };
+
+        if custom_checks.is_empty() {
+            return Vec::new();
+        }
+
+        let mut outcomes = Vec::new();
+
+        for check in custom_checks {
+            let syntax_errors = self.validate_single_custom_check(check);
+            if !syntax_errors.is_empty() {
+                outcomes.extend(
+                    syntax_errors
+                        .into_iter()
+                        .map(|e| (check.severity.clone(), e)),
+                );
+                continue;
+            }
+
+            match self.execute_custom_check(check, ctx).await {
+                Ok(Some(error)) => outcomes.push((check.severity.clone(), error)),
+                Ok(None) => {}
+                Err(error) => outcomes.push((check.severity.clone(), error)),
+            }
+        }
+
+        outcomes
     }
 
     /// Validates custom SQL checks with actual DataFusion execution.
