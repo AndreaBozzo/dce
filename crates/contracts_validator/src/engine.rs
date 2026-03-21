@@ -80,7 +80,11 @@ impl DataValidator {
             .validate(contract, &dataset_to_validate, context)
             .await;
 
-        self.apply_ml_checks(
+        // NoOverlap and TemporalSplit still use row-by-row iteration.
+        // The remaining ML checks (ClassBalance, FeatureDrift, TargetLeakage,
+        // NullRateByGroup) are now handled via SQL aggregates inside
+        // DataFusionEngine::validate().
+        self.apply_row_only_ml_checks(
             contract,
             &dataset_to_validate,
             context,
@@ -132,8 +136,8 @@ impl DataValidator {
     /// The `SessionContext` must have a table named `"data"` already registered.
     /// This skips the `DataSet` → Arrow conversion entirely.
     ///
-    /// ML checks are not supported in this path and will be reported as warnings
-    /// when they are defined in the contract.
+    /// Most ML checks run via SQL aggregates. NoOverlap and TemporalSplit require
+    /// a `DataSet` and will be skipped with a warning when defined.
     pub async fn validate_with_context(
         &mut self,
         contract: &Contract,
@@ -177,14 +181,15 @@ impl DataValidator {
                 }
             }
 
-            // ML checks require DataSet (row-level iteration) and are not
-            // supported in the native context path.
+            // NoOverlap and TemporalSplit require row-level DataSet iteration
+            // and cannot run in the native context path.
             if let Some(ref qc) = contract.quality_checks
-                && qc.ml_checks.is_some()
+                && let Some(ref ml) = qc.ml_checks
+                && (ml.no_overlap.is_some() || ml.temporal_split.is_some())
             {
                 report.warnings.push(
-                    "ML checks are not supported in the native DataFusion path \
-                     and were skipped. Use the DataSet-based path for ML validation."
+                    "NoOverlap and TemporalSplit ML checks require the DataSet-based \
+                     path and were skipped in native DataFusion context mode."
                         .to_string(),
                 );
             }
@@ -273,7 +278,10 @@ impl DataValidator {
         }
     }
 
-    fn apply_ml_checks(
+    /// Runs only the ML checks that require row-level iteration (NoOverlap,
+    /// TemporalSplit). Used by the async path where the SQL-migrated checks are
+    /// already handled by `DataFusionEngine::check_ml()`.
+    fn apply_row_only_ml_checks(
         &self,
         contract: &Contract,
         dataset: &DataSet,
@@ -288,7 +296,7 @@ impl DataValidator {
         if let Some(ref qc) = contract.quality_checks
             && let Some(ref ml) = qc.ml_checks
         {
-            let ml_errors = self.ml_validator.validate(ml, dataset);
+            let ml_errors = self.ml_validator.validate_row_only(ml, dataset);
             if context.strict {
                 errors.extend(ml_errors.iter().map(|e| e.to_string()));
             } else {

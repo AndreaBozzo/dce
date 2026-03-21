@@ -26,6 +26,32 @@ impl MlValidator {
         Self
     }
 
+    /// Validates only the ML checks that require row-level DataSet iteration
+    /// (NoOverlap, TemporalSplit). The remaining checks (ClassBalance, FeatureDrift,
+    /// TargetLeakage, NullRateByGroup) are handled via SQL aggregates in
+    /// `DataFusionEngine::check_ml()`.
+    pub fn validate_row_only(
+        &self,
+        ml_checks: &MlChecks,
+        dataset: &DataSet,
+    ) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        if dataset.is_empty() {
+            return errors;
+        }
+
+        if let Some(ref check) = ml_checks.no_overlap {
+            errors.extend(self.validate_no_overlap(check, dataset));
+        }
+
+        if let Some(ref check) = ml_checks.temporal_split {
+            errors.extend(self.validate_temporal_split(check, dataset));
+        }
+
+        errors
+    }
+
     /// Validates all ML checks in the given `MlChecks` against a dataset.
     pub fn validate(&self, ml_checks: &MlChecks, dataset: &DataSet) -> Vec<ValidationError> {
         let mut errors = Vec::new();
