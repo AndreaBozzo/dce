@@ -58,8 +58,34 @@ pub async fn execute(
                 validate_iceberg_table(&contract, &context).await?
             }
         }
+        DataFormat::Parquet | DataFormat::Csv | DataFormat::Json => {
+            if schema_only {
+                output::print_info("Schema-only mode: validating contract structure without data");
+                let dataset = DataSet::empty();
+                let mut validator = DataValidator::new();
+                validator
+                    .validate_with_data_async(&contract, &dataset, &context)
+                    .await
+            } else {
+                output::print_info(&format!(
+                    "Reading {:?} file from: {}",
+                    contract.schema.format, contract.schema.location
+                ));
+                let ctx = contracts_validator::register_file_as_table(
+                    &contract.schema.format,
+                    &contract.schema.location,
+                    context.sample_size,
+                )
+                .await
+                .map_err(|e| anyhow!("{}", e))?;
+
+                let mut validator = DataValidator::new();
+                validator
+                    .validate_with_context(&contract, &ctx, &context)
+                    .await
+            }
+        }
         _ => {
-            // For other formats, fall back to schema-only validation for now
             output::print_info(&format!(
                 "Format {:?} not yet fully supported, performing schema-only validation",
                 contract.schema.format
