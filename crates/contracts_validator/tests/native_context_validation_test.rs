@@ -279,8 +279,72 @@ async fn test_context_passing_validation() {
     assert_eq!(report.stats.fields_checked, 2);
 }
 
+/// SQL-based ML checks now execute in the native context path.
+/// TargetLeakage with a perfect correlation (feature == target) should produce a warning.
 #[tokio::test]
-async fn test_context_ml_checks_skipped_with_warning() {
+async fn test_context_ml_checks_execute_via_sql() {
+    let schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("feature", ArrowDataType::Float64, false),
+        ArrowField::new("target", ArrowDataType::Float64, false),
+    ]));
+
+    let feature = arrow_array::Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let target = arrow_array::Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let batch = RecordBatch::try_new(schema, vec![Arc::new(feature), Arc::new(target)]).unwrap();
+
+    let ctx = make_context(batch);
+
+    let contract = ContractBuilder::new("test", "owner")
+        .location("s3://test")
+        .format(DataFormat::Iceberg)
+        .field(
+            FieldBuilder::new("feature", "float64")
+                .nullable(false)
+                .build(),
+        )
+        .field(
+            FieldBuilder::new("target", "float64")
+                .nullable(false)
+                .build(),
+        )
+        .quality_checks(QualityChecks {
+            completeness: None,
+            uniqueness: None,
+            freshness: None,
+            custom_checks: None,
+            ml_checks: Some(contracts_core::MlChecks {
+                no_overlap: None,
+                temporal_split: None,
+                class_balance: None,
+                feature_drift: None,
+                target_leakage: Some(TargetLeakageCheck {
+                    target_field: "target".to_string(),
+                    feature_fields: vec!["feature".to_string()],
+                    max_correlation: Some(0.9),
+                }),
+                null_rate_by_group: None,
+            }),
+        })
+        .build();
+
+    // Non-strict: ML check results go to warnings
+    let context = ValidationContext::new();
+    let mut validator = DataValidator::new();
+    let report = validator
+        .validate_with_context(&contract, &ctx, &context)
+        .await;
+
+    assert!(report.passed);
+    assert!(
+        report.warnings.iter().any(|w| w.contains("TargetLeakage")),
+        "Expected TargetLeakage warning, got: {:?}",
+        report.warnings,
+    );
+}
+
+/// NoOverlap and TemporalSplit still produce a skip warning in the context path.
+#[tokio::test]
+async fn test_context_row_only_ml_checks_skipped_with_warning() {
     let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
         "value",
         ArrowDataType::Float64,
@@ -307,15 +371,14 @@ async fn test_context_ml_checks_skipped_with_warning() {
             freshness: None,
             custom_checks: None,
             ml_checks: Some(contracts_core::MlChecks {
-                no_overlap: None,
+                no_overlap: Some(contracts_core::NoOverlapCheck {
+                    split_field: "split".to_string(),
+                    key_fields: vec!["value".to_string()],
+                }),
                 temporal_split: None,
                 class_balance: None,
                 feature_drift: None,
-                target_leakage: Some(TargetLeakageCheck {
-                    target_field: "value".to_string(),
-                    feature_fields: vec!["value".to_string()],
-                    max_correlation: Some(0.9),
-                }),
+                target_leakage: None,
                 null_rate_by_group: None,
             }),
         })
@@ -332,6 +395,8 @@ async fn test_context_ml_checks_skipped_with_warning() {
         report
             .warnings
             .iter()
-            .any(|w| w.contains("ML checks are not supported"))
+            .any(|w| w.contains("NoOverlap and TemporalSplit")),
+        "Expected row-only ML skip warning, got: {:?}",
+        report.warnings,
     );
 }
