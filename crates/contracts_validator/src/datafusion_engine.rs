@@ -208,13 +208,10 @@ impl DataFusionEngine {
                 if let Some(ref c) = qc.custom_checks {
                     n += c.len();
                 }
+                // Only count SQL-executed ML checks. Row-only checks
+                // (no_overlap, temporal_split) are skipped in the native
+                // context path and should not inflate constraints_evaluated.
                 if let Some(ref ml) = qc.ml_checks {
-                    if ml.no_overlap.is_some() {
-                        n += 1;
-                    }
-                    if ml.temporal_split.is_some() {
-                        n += 1;
-                    }
                     if ml.class_balance.is_some() {
                         n += 1;
                     }
@@ -679,6 +676,15 @@ impl DataFusionEngine {
         let epsilon = 1e-6;
         let mut errs = Vec::new();
 
+        // NTILE requires at least 2 bins for meaningful PSI comparison
+        if num_bins < 2 {
+            return errs;
+        }
+
+        // Escape single quotes in split values to prevent SQL injection
+        let ref_split_escaped = check.reference_split.replace('\'', "''");
+        let cur_split_escaped = check.current_split.replace('\'', "''");
+
         for field in &check.feature_fields {
             // Step 1: Get exact quantile bin boundaries and counts from the reference split
             let ref_sql = format!(
@@ -687,9 +693,9 @@ impl DataFusionEngine {
                      SELECT CAST(\"{field}\" AS DOUBLE) AS val, \
                             NTILE({num_bins}) OVER (ORDER BY CAST(\"{field}\" AS DOUBLE)) AS bin \
                      FROM data \
-                     WHERE \"{}\" = '{}' AND \"{field}\" IS NOT NULL \
+                     WHERE \"{}\" = '{ref_split_escaped}' AND \"{field}\" IS NOT NULL \
                  ) GROUP BY bin ORDER BY bin",
-                check.split_field, check.reference_split,
+                check.split_field,
             );
 
             let ref_batches = match ctx.sql(&ref_sql).await {
@@ -714,13 +720,16 @@ impl DataFusionEngine {
                 }
             };
 
-            // Extract boundaries and reference bin counts
-            let mut boundaries: Vec<f64> = Vec::new();
-            let mut ref_counts: Vec<f64> = Vec::new();
+            // Extract boundaries and reference bin counts, indexed by the bin column
+            // to avoid depending on batch ordering.
+            let mut boundaries = vec![f64::NAN; num_bins];
+            let mut ref_counts = vec![0.0_f64; num_bins];
+            let mut bins_found = 0usize;
 
             for batch in &ref_batches {
                 let hi_col = batch.column(1); // MAX(val) = upper boundary
                 let cnt_col = batch.column(2);
+                let bin_col = batch.column(3); // bin number (1-indexed from NTILE)
 
                 let hi_arr = match hi_col.as_any().downcast_ref::<arrow_array::Float64Array>() {
                     Some(a) => a,
@@ -728,8 +737,26 @@ impl DataFusionEngine {
                 };
 
                 for i in 0..batch.num_rows() {
+                    let bin_idx = if let Some(a) =
+                        bin_col.as_any().downcast_ref::<arrow_array::Int64Array>()
+                    {
+                        a.value(i) as usize
+                    } else if let Some(a) =
+                        bin_col.as_any().downcast_ref::<arrow_array::UInt64Array>()
+                    {
+                        a.value(i) as usize
+                    } else {
+                        continue;
+                    };
+
+                    // NTILE bins are 1-indexed
+                    if bin_idx < 1 || bin_idx > num_bins {
+                        continue;
+                    }
+                    let idx = bin_idx - 1;
+
                     if !hi_arr.is_null(i) {
-                        boundaries.push(hi_arr.value(i));
+                        boundaries[idx] = hi_arr.value(i);
                     }
 
                     let cnt = if let Some(a) =
@@ -743,11 +770,12 @@ impl DataFusionEngine {
                     } else {
                         0.0
                     };
-                    ref_counts.push(cnt);
+                    ref_counts[idx] = cnt;
+                    bins_found += 1;
                 }
             }
 
-            if ref_counts.len() < num_bins {
+            if bins_found < num_bins {
                 errs.push(format!(
                     "Quality check failed: FeatureDrift check: insufficient reference data \
                      for field '{}' in split '{}'",
@@ -774,9 +802,9 @@ impl DataFusionEngine {
             let cur_sql = format!(
                 "SELECT {case_expr} AS bin, COUNT(*) AS cnt \
                  FROM data \
-                 WHERE \"{}\" = '{}' AND \"{field}\" IS NOT NULL \
+                 WHERE \"{}\" = '{cur_split_escaped}' AND \"{field}\" IS NOT NULL \
                  GROUP BY {case_expr}",
-                check.split_field, check.current_split,
+                check.split_field,
             );
 
             let cur_batches = match ctx.sql(&cur_sql).await {
