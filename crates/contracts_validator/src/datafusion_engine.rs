@@ -1109,20 +1109,24 @@ pub(crate) fn dataset_to_record_batch(
 ) -> Result<RecordBatch, String> {
     let num_rows = dataset.len();
 
-    let arrow_fields: Vec<ArrowField> = fields
-        .iter()
-        .map(|f| {
-            let arrow_dt = dce_type_to_arrow(&f.field_type);
-            ArrowField::new(&f.name, arrow_dt, f.nullable)
-        })
-        .collect();
-    let schema = Arc::new(ArrowSchema::new(arrow_fields));
+    // Collect rows once so each column builder borrows from the same slice,
+    // avoiding O(rows * cols) cloning.
+    let rows: Vec<_> = dataset.rows().cloned().collect();
 
     let mut columns: Vec<Arc<dyn arrow_array::Array>> = Vec::with_capacity(fields.len());
     for field in fields {
-        let col = build_arrow_column(field, dataset, num_rows)?;
+        let col = build_arrow_column(field, &rows, num_rows)?;
         columns.push(col);
     }
+
+    // Derive the schema from the actual arrays so that complex inner types
+    // (which may have been collapsed to Utf8 by the builders) are consistent.
+    let arrow_fields: Vec<ArrowField> = fields
+        .iter()
+        .zip(columns.iter())
+        .map(|(f, col)| ArrowField::new(&f.name, col.data_type().clone(), f.nullable))
+        .collect();
+    let schema = Arc::new(ArrowSchema::new(arrow_fields));
 
     RecordBatch::try_new(schema, columns).map_err(|e| e.to_string())
 }
@@ -1150,15 +1154,28 @@ pub(crate) async fn count_query(ctx: &SessionContext, sql: &str) -> Result<i64, 
 
 fn build_arrow_column(
     field: &Field,
-    dataset: &DataSet,
+    rows: &[crate::DataRow],
     num_rows: usize,
 ) -> Result<Arc<dyn arrow_array::Array>, String> {
     let arrow_dt = dce_type_to_arrow(&field.field_type);
+    build_arrow_array(&arrow_dt, &field.name, rows, num_rows)
+}
+
+/// Builds an Arrow array from dataset rows for a given column name and Arrow type.
+///
+/// Handles primitives directly and delegates to specialised helpers for
+/// List, Struct, and Map types.
+fn build_arrow_array(
+    arrow_dt: &ArrowDataType,
+    col_name: &str,
+    rows: &[crate::DataRow],
+    num_rows: usize,
+) -> Result<Arc<dyn arrow_array::Array>, String> {
     match arrow_dt {
         ArrowDataType::Utf8 => {
             let mut builder = StringBuilder::with_capacity(num_rows, num_rows * 32);
-            for row in dataset.rows() {
-                match row.get(&field.name) {
+            for row in rows {
+                match row.get(col_name) {
                     Some(DataValue::String(s)) => builder.append_value(s),
                     Some(DataValue::Timestamp(s)) => builder.append_value(s),
                     Some(DataValue::Int(i)) => builder.append_value(i.to_string()),
@@ -1172,8 +1189,8 @@ fn build_arrow_column(
         }
         ArrowDataType::Int64 => {
             let mut builder = Int64Builder::with_capacity(num_rows);
-            for row in dataset.rows() {
-                match row.get(&field.name) {
+            for row in rows {
+                match row.get(col_name) {
                     Some(DataValue::Int(i)) => builder.append_value(*i),
                     Some(DataValue::Float(f)) => builder.append_value(*f as i64),
                     Some(DataValue::Null) | None => builder.append_null(),
@@ -1184,8 +1201,8 @@ fn build_arrow_column(
         }
         ArrowDataType::Float64 => {
             let mut builder = Float64Builder::with_capacity(num_rows);
-            for row in dataset.rows() {
-                match row.get(&field.name) {
+            for row in rows {
+                match row.get(col_name) {
                     Some(DataValue::Float(f)) => builder.append_value(*f),
                     Some(DataValue::Int(i)) => builder.append_value(*i as f64),
                     Some(DataValue::Null) | None => builder.append_null(),
@@ -1196,8 +1213,8 @@ fn build_arrow_column(
         }
         ArrowDataType::Boolean => {
             let mut builder = BooleanBuilder::with_capacity(num_rows);
-            for row in dataset.rows() {
-                match row.get(&field.name) {
+            for row in rows {
+                match row.get(col_name) {
                     Some(DataValue::Bool(b)) => builder.append_value(*b),
                     Some(DataValue::Null) | None => builder.append_null(),
                     _ => builder.append_null(),
@@ -1205,13 +1222,20 @@ fn build_arrow_column(
             }
             Ok(Arc::new(builder.finish()))
         }
+        ArrowDataType::List(item_field) => build_list_array(item_field, col_name, rows, num_rows),
+        ArrowDataType::Struct(struct_fields) => {
+            build_struct_array(struct_fields, col_name, rows, num_rows)
+        }
+        ArrowDataType::Map(entries_field, _keys_sorted) => {
+            build_map_array(entries_field, col_name, rows, num_rows)
+        }
         _ => {
             // Fallback: store as Utf8
             let mut builder = StringBuilder::with_capacity(num_rows, num_rows * 32);
-            for row in dataset.rows() {
-                match row.get(&field.name) {
+            for row in rows {
+                match row.get(col_name) {
                     Some(DataValue::Null) | None => builder.append_null(),
-                    Some(v) => builder.append_value(format!("{:?}", v)),
+                    Some(v) => builder.append_value(format!("{v:?}")),
                 }
             }
             Ok(Arc::new(builder.finish()))
@@ -1219,12 +1243,250 @@ fn build_arrow_column(
     }
 }
 
-/// Map a DCE DataType to an Arrow DataType for the DataSet-based validation path.
+// ---------------------------------------------------------------------------
+// Complex-type Arrow builders
+// ---------------------------------------------------------------------------
+
+/// Append a single `DataValue` into a primitive builder, treating unsupported
+/// or null values as nulls in the target array.
+fn append_primitive_value(
+    builder: &mut Box<dyn ArrayBuilder>,
+    val: Option<&DataValue>,
+    inner_dt: &ArrowDataType,
+) {
+    match inner_dt {
+        ArrowDataType::Utf8 => {
+            let b = builder
+                .as_any_mut()
+                .downcast_mut::<StringBuilder>()
+                .unwrap();
+            match val {
+                Some(DataValue::String(s)) => b.append_value(s),
+                Some(DataValue::Int(i)) => b.append_value(i.to_string()),
+                Some(DataValue::Float(f)) => b.append_value(f.to_string()),
+                Some(DataValue::Bool(v)) => b.append_value(v.to_string()),
+                Some(DataValue::Timestamp(s)) => b.append_value(s),
+                _ => b.append_null(),
+            }
+        }
+        ArrowDataType::Int64 => {
+            let b = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+            match val {
+                Some(DataValue::Int(i)) => b.append_value(*i),
+                Some(DataValue::Float(f)) => b.append_value(*f as i64),
+                _ => b.append_null(),
+            }
+        }
+        ArrowDataType::Float64 => {
+            let b = builder
+                .as_any_mut()
+                .downcast_mut::<Float64Builder>()
+                .unwrap();
+            match val {
+                Some(DataValue::Float(f)) => b.append_value(*f),
+                Some(DataValue::Int(i)) => b.append_value(*i as f64),
+                _ => b.append_null(),
+            }
+        }
+        ArrowDataType::Boolean => {
+            let b = builder
+                .as_any_mut()
+                .downcast_mut::<BooleanBuilder>()
+                .unwrap();
+            match val {
+                Some(DataValue::Bool(v)) => b.append_value(*v),
+                _ => b.append_null(),
+            }
+        }
+        _ => {
+            // Nested complex inner types — serialise as JSON string
+            let b = builder
+                .as_any_mut()
+                .downcast_mut::<StringBuilder>()
+                .unwrap();
+            match val {
+                Some(DataValue::Null) | None => b.append_null(),
+                Some(v) => b.append_value(format!("{v:?}")),
+            }
+        }
+    }
+}
+
+/// Create a boxed primitive `ArrayBuilder` for the given Arrow type.
 ///
-/// Complex types (List, Map, Struct) are represented as Utf8 (JSON-serialized)
-/// because `build_arrow_column` does not yet have native Arrow builders for them.
-/// When native Iceberg table registration is implemented (issue #8), the real
-/// Arrow types will be used directly without going through `DataSet`.
+/// Non-primitive types (List, Struct, Map, etc.) are not supported by this
+/// builder and fall back to `StringBuilder` (JSON serialisation).  Use
+/// [`effective_builder_type`] to determine the actual Arrow type that will
+/// be produced.
+fn make_primitive_builder(dt: &ArrowDataType, capacity: usize) -> Box<dyn ArrayBuilder> {
+    match dt {
+        ArrowDataType::Int64 => Box::new(Int64Builder::with_capacity(capacity)),
+        ArrowDataType::Float64 => Box::new(Float64Builder::with_capacity(capacity)),
+        ArrowDataType::Boolean => Box::new(BooleanBuilder::with_capacity(capacity)),
+        _ => Box::new(StringBuilder::with_capacity(capacity, capacity * 32)),
+    }
+}
+
+/// Returns the Arrow type that [`make_primitive_builder`] actually produces
+/// for `dt`.  Complex types are collapsed to `Utf8` because the builder
+/// serialises them as JSON strings.
+fn effective_builder_type(dt: &ArrowDataType) -> ArrowDataType {
+    match dt {
+        ArrowDataType::Int64 | ArrowDataType::Float64 | ArrowDataType::Boolean => dt.clone(),
+        _ => ArrowDataType::Utf8,
+    }
+}
+
+/// Build an Arrow `ListArray` from `DataValue::List` entries.
+fn build_list_array(
+    item_field: &Arc<ArrowField>,
+    col_name: &str,
+    rows: &[crate::DataRow],
+    num_rows: usize,
+) -> Result<Arc<dyn arrow_array::Array>, String> {
+    let inner_dt = item_field.data_type();
+    // Use the effective type so the builder's physical type matches the
+    // schema field (complex inner types are serialised as Utf8).
+    let eff = effective_builder_type(inner_dt);
+    let actual_field = ArrowField::new(item_field.name(), eff.clone(), item_field.is_nullable());
+    let values_builder = make_primitive_builder(inner_dt, num_rows * 4);
+    let mut list_builder = ListBuilder::new(values_builder).with_field(actual_field);
+
+    for row in rows {
+        match row.get(col_name) {
+            Some(DataValue::List(items)) => {
+                let vb = list_builder.values();
+                for item in items {
+                    append_primitive_value(vb, Some(item), inner_dt);
+                }
+                list_builder.append(true);
+            }
+            Some(DataValue::Null) | None => {
+                list_builder.append(false);
+            }
+            _ => {
+                list_builder.append(false);
+            }
+        }
+    }
+    Ok(Arc::new(list_builder.finish()))
+}
+
+/// Build an Arrow `StructArray` from `DataValue::Map` entries
+/// (DCE uses `Map` for both map and struct data values).
+fn build_struct_array(
+    struct_fields: &arrow_schema::Fields,
+    col_name: &str,
+    rows: &[crate::DataRow],
+    num_rows: usize,
+) -> Result<Arc<dyn arrow_array::Array>, String> {
+    let field_defs: Vec<_> = struct_fields.iter().collect();
+    let mut child_builders: Vec<Box<dyn ArrayBuilder>> = field_defs
+        .iter()
+        .map(|f| make_primitive_builder(f.data_type(), num_rows))
+        .collect();
+
+    let mut null_buffer = BooleanBuilder::with_capacity(num_rows);
+
+    for row in rows {
+        match row.get(col_name) {
+            Some(DataValue::Map(map)) => {
+                for (i, f) in field_defs.iter().enumerate() {
+                    let val = map.get(f.name().as_str());
+                    append_primitive_value(&mut child_builders[i], val, f.data_type());
+                }
+                null_buffer.append_value(true);
+            }
+            _ => {
+                for (i, f) in field_defs.iter().enumerate() {
+                    append_primitive_value(&mut child_builders[i], None, f.data_type());
+                }
+                null_buffer.append_value(false);
+            }
+        }
+    }
+
+    let child_arrays: Vec<Arc<dyn arrow_array::Array>> =
+        child_builders.iter_mut().map(|b| b.finish()).collect();
+
+    // Adjust field types to match what make_primitive_builder actually produced
+    // (complex inner types are serialised as Utf8).
+    let effective_fields: Vec<ArrowField> = field_defs
+        .iter()
+        .map(|f| {
+            ArrowField::new(
+                f.name(),
+                effective_builder_type(f.data_type()),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+    let effective_schema: arrow_schema::Fields = effective_fields.into();
+
+    let struct_array = arrow_array::StructArray::try_new(
+        effective_schema,
+        child_arrays,
+        Some(null_buffer.finish().values().clone().into()),
+    )
+    .map_err(|e| format!("Failed to build StructArray for '{col_name}': {e}"))?;
+
+    Ok(Arc::new(struct_array))
+}
+
+/// Build an Arrow `MapArray` from `DataValue::Map` entries.
+fn build_map_array(
+    entries_field: &Arc<ArrowField>,
+    col_name: &str,
+    rows: &[crate::DataRow],
+    num_rows: usize,
+) -> Result<Arc<dyn arrow_array::Array>, String> {
+    // Extract key and value types from the entries struct
+    let entries_dt = entries_field.data_type();
+    let (key_dt, val_dt) = match entries_dt {
+        ArrowDataType::Struct(fields) if fields.len() == 2 => {
+            (fields[0].data_type().clone(), fields[1].data_type().clone())
+        }
+        _ => {
+            return Err(format!(
+                "Unexpected Map entries type for '{col_name}': {entries_dt:?}"
+            ));
+        }
+    };
+
+    let key_builder = make_primitive_builder(&key_dt, num_rows * 4);
+    let val_builder = make_primitive_builder(&val_dt, num_rows * 4);
+    let mut map_builder = MapBuilder::new(None, key_builder, val_builder);
+
+    for row in rows {
+        match row.get(col_name) {
+            Some(DataValue::Map(map)) => {
+                for (k, v) in map {
+                    append_primitive_value(
+                        map_builder.keys(),
+                        Some(&DataValue::String(k.clone())),
+                        &key_dt,
+                    );
+                    append_primitive_value(map_builder.values(), Some(v), &val_dt);
+                }
+                map_builder.append(true).map_err(|e| e.to_string())?;
+            }
+            Some(DataValue::Null) | None => {
+                map_builder.append(false).map_err(|e| e.to_string())?;
+            }
+            _ => {
+                map_builder.append(false).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    Ok(Arc::new(map_builder.finish()))
+}
+
+/// Map a DCE DataType to an Arrow DataType.
+///
+/// Primitive types map to their natural Arrow counterparts.
+/// Complex types (List, Map, Struct) are mapped recursively to native Arrow
+/// types so that DataFusion can query nested fields directly.
 fn dce_type_to_arrow(dt: &DataType) -> ArrowDataType {
     match dt {
         DataType::Primitive(p) => match p {
@@ -1239,9 +1501,43 @@ fn dce_type_to_arrow(dt: &DataType) -> ArrowDataType {
             }
             PrimitiveType::Decimal | PrimitiveType::Binary => ArrowDataType::Utf8,
         },
-        // Complex types: serialize as Utf8 until native builders are implemented
-        DataType::List { .. } | DataType::Map { .. } | DataType::Struct { .. } => {
-            ArrowDataType::Utf8
+        DataType::List {
+            element_type,
+            contains_null,
+        } => {
+            let inner = dce_type_to_arrow(element_type);
+            ArrowDataType::List(Arc::new(ArrowField::new("item", inner, *contains_null)))
+        }
+        DataType::Map {
+            key_type: _,
+            value_type,
+            value_contains_null,
+        } => {
+            // DataValue::Map is backed by HashMap<String, DataValue>, so keys
+            // are always strings at runtime.  Force key type to Utf8 to keep
+            // the Arrow schema consistent with the actual builder output.
+            let val = dce_type_to_arrow(value_type);
+            ArrowDataType::Map(
+                Arc::new(ArrowField::new(
+                    "entries",
+                    ArrowDataType::Struct(
+                        vec![
+                            ArrowField::new("key", ArrowDataType::Utf8, false),
+                            ArrowField::new("value", val, *value_contains_null),
+                        ]
+                        .into(),
+                    ),
+                    false,
+                )),
+                false,
+            )
+        }
+        DataType::Struct { fields } => {
+            let arrow_fields: Vec<ArrowField> = fields
+                .iter()
+                .map(|f| ArrowField::new(&f.name, dce_type_to_arrow(&f.data_type), f.nullable))
+                .collect();
+            ArrowDataType::Struct(arrow_fields.into())
         }
     }
 }
@@ -1549,5 +1845,174 @@ mod ml_tests {
             "Same distribution should pass, got: {:?}",
             errs
         );
+    }
+}
+
+#[cfg(test)]
+mod complex_type_tests {
+    use super::*;
+    use contracts_core::{PrimitiveType, StructField as DceStructField};
+
+    #[test]
+    fn dce_type_to_arrow_list_string() {
+        let dt = DataType::List {
+            element_type: Box::new(DataType::Primitive(PrimitiveType::String)),
+            contains_null: true,
+        };
+        let arrow = dce_type_to_arrow(&dt);
+        assert!(
+            matches!(arrow, ArrowDataType::List(_)),
+            "Expected List, got {arrow:?}"
+        );
+    }
+
+    #[test]
+    fn dce_type_to_arrow_struct() {
+        let dt = DataType::Struct {
+            fields: vec![
+                DceStructField {
+                    name: "x".to_string(),
+                    data_type: DataType::Primitive(PrimitiveType::Int64),
+                    nullable: false,
+                },
+                DceStructField {
+                    name: "y".to_string(),
+                    data_type: DataType::Primitive(PrimitiveType::String),
+                    nullable: true,
+                },
+            ],
+        };
+        let arrow = dce_type_to_arrow(&dt);
+        match &arrow {
+            ArrowDataType::Struct(fields) => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name(), "x");
+                assert_eq!(fields[1].name(), "y");
+            }
+            other => panic!("Expected Struct, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dce_type_to_arrow_map_string_int() {
+        let dt = DataType::Map {
+            key_type: Box::new(DataType::Primitive(PrimitiveType::String)),
+            value_type: Box::new(DataType::Primitive(PrimitiveType::Int64)),
+            value_contains_null: true,
+        };
+        let arrow = dce_type_to_arrow(&dt);
+        assert!(
+            matches!(arrow, ArrowDataType::Map(_, _)),
+            "Expected Map, got {arrow:?}"
+        );
+    }
+
+    #[test]
+    fn build_list_column_from_dataset() {
+        let dt = DataType::List {
+            element_type: Box::new(DataType::Primitive(PrimitiveType::String)),
+            contains_null: false,
+        };
+        let field = Field {
+            name: "tags".to_string(),
+            field_type: dt,
+            nullable: false,
+            description: None,
+            constraints: None,
+            tags: None,
+        };
+
+        let mut row1 = std::collections::HashMap::new();
+        row1.insert(
+            "tags".to_string(),
+            DataValue::List(vec![
+                DataValue::String("a".to_string()),
+                DataValue::String("b".to_string()),
+            ]),
+        );
+
+        let mut row2 = std::collections::HashMap::new();
+        row2.insert(
+            "tags".to_string(),
+            DataValue::List(vec![DataValue::String("c".to_string())]),
+        );
+
+        let dataset = DataSet::from_rows(vec![row1, row2]);
+        let rows: Vec<_> = dataset.rows().cloned().collect();
+        let result = build_arrow_column(&field, &rows, 2);
+        assert!(result.is_ok(), "build_arrow_column failed: {:?}", result);
+        let array = result.unwrap();
+        assert_eq!(array.len(), 2);
+    }
+
+    #[test]
+    fn build_struct_column_from_dataset() {
+        let dt = DataType::Struct {
+            fields: vec![
+                DceStructField {
+                    name: "x".to_string(),
+                    data_type: DataType::Primitive(PrimitiveType::Int64),
+                    nullable: false,
+                },
+                DceStructField {
+                    name: "y".to_string(),
+                    data_type: DataType::Primitive(PrimitiveType::String),
+                    nullable: true,
+                },
+            ],
+        };
+        let field = Field {
+            name: "point".to_string(),
+            field_type: dt,
+            nullable: false,
+            description: None,
+            constraints: None,
+            tags: None,
+        };
+
+        let mut inner = std::collections::HashMap::new();
+        inner.insert("x".to_string(), DataValue::Int(42));
+        inner.insert("y".to_string(), DataValue::String("hello".to_string()));
+
+        let mut row = std::collections::HashMap::new();
+        row.insert("point".to_string(), DataValue::Map(inner));
+
+        let dataset = DataSet::from_rows(vec![row]);
+        let rows: Vec<_> = dataset.rows().cloned().collect();
+        let result = build_arrow_column(&field, &rows, 1);
+        assert!(result.is_ok(), "build_arrow_column failed: {:?}", result);
+        let array = result.unwrap();
+        assert_eq!(array.len(), 1);
+    }
+
+    #[test]
+    fn build_map_column_from_dataset() {
+        let dt = DataType::Map {
+            key_type: Box::new(DataType::Primitive(PrimitiveType::String)),
+            value_type: Box::new(DataType::Primitive(PrimitiveType::String)),
+            value_contains_null: true,
+        };
+        let field = Field {
+            name: "props".to_string(),
+            field_type: dt,
+            nullable: true,
+            description: None,
+            constraints: None,
+            tags: None,
+        };
+
+        let mut inner = std::collections::HashMap::new();
+        inner.insert("k1".to_string(), DataValue::String("v1".to_string()));
+        inner.insert("k2".to_string(), DataValue::String("v2".to_string()));
+
+        let mut row = std::collections::HashMap::new();
+        row.insert("props".to_string(), DataValue::Map(inner));
+
+        let dataset = DataSet::from_rows(vec![row]);
+        let rows: Vec<_> = dataset.rows().cloned().collect();
+        let result = build_arrow_column(&field, &rows, 1);
+        assert!(result.is_ok(), "build_arrow_column failed: {:?}", result);
+        let array = result.unwrap();
+        assert_eq!(array.len(), 1);
     }
 }
