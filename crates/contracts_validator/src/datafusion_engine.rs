@@ -62,6 +62,10 @@ impl DataFusionEngine {
             return self.build_report(errors, warnings, contract, dataset, start);
         }
 
+        // --- 0. Schema presence checks ---
+        let presence_errs = self.check_schema_presence(contract, &ctx).await;
+        errors.extend(presence_errs);
+
         // --- 1. Schema / nullability checks ---
         let null_errs = self.check_nullability(contract, &ctx).await;
         errors.extend(null_errs);
@@ -116,6 +120,10 @@ impl DataFusionEngine {
         let start = Instant::now();
         let mut errors: Vec<String> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
+
+        // --- 0. Schema presence checks ---
+        let presence_errs = self.check_schema_presence(contract, ctx).await;
+        errors.extend(presence_errs);
 
         // --- 1. Schema / nullability checks ---
         let null_errs = self.check_nullability(contract, ctx).await;
@@ -246,6 +254,37 @@ impl DataFusionEngine {
     // Nullability
     // -----------------------------------------------------------------------
 
+    /// Check that every field declared in the contract exists in the data table.
+    async fn check_schema_presence(
+        &self,
+        contract: &Contract,
+        ctx: &SessionContext,
+    ) -> Vec<String> {
+        let mut errs = Vec::new();
+
+        // Retrieve the table's column names from DataFusion.
+        let table_columns: std::collections::HashSet<String> =
+            match ctx.sql("SELECT * FROM data LIMIT 0").await {
+                Ok(df) => df
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|f| f.name().clone())
+                    .collect(),
+                Err(_) => return errs, // table not accessible, will be caught later
+            };
+
+        for field in &contract.schema.fields {
+            if !table_columns.contains(&field.name) {
+                errs.push(format!(
+                    "Field '{}' is declared in the contract but missing from the data",
+                    field.name
+                ));
+            }
+        }
+        errs
+    }
+
     async fn check_nullability(&self, contract: &Contract, ctx: &SessionContext) -> Vec<String> {
         let mut errs = Vec::new();
         for field in &contract.schema.fields {
@@ -256,13 +295,15 @@ impl DataFusionEngine {
                 "SELECT COUNT(*) AS cnt FROM data WHERE \"{}\" IS NULL",
                 field.name
             );
-            if let Ok(cnt) = count_query(ctx, &sql).await
-                && cnt > 0
-            {
-                errs.push(format!(
-                    "Field '{}' is null but nullability is not allowed ({cnt} row(s))",
-                    field.name
-                ));
+            match count_query(ctx, &sql).await {
+                Ok(cnt) if cnt > 0 => {
+                    errs.push(format!(
+                        "Field '{}' is null but nullability is not allowed ({cnt} row(s))",
+                        field.name
+                    ));
+                }
+                Ok(_) => {}
+                Err(_) => {} // column may not exist; already reported by check_schema_presence
             }
         }
         errs
