@@ -41,6 +41,7 @@ mod schema;
 mod validator;
 
 pub use config::{CatalogType, IcebergConfig};
+pub use converter::dce_type_to_iceberg_type;
 pub use validator::IcebergValidator;
 
 /// Error types specific to Iceberg operations.

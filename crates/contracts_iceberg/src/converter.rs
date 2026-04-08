@@ -3,7 +3,10 @@
 use crate::IcebergError;
 use contracts_core::{DataType, PrimitiveType as DcePrimitiveType, StructField as DceStructField};
 use contracts_validator::DataValue;
-use iceberg::spec::{PrimitiveType, Type as IcebergType};
+use iceberg::spec::{
+    ListType, MapType, NestedField, PrimitiveType, StructType, Type as IcebergType,
+};
+use std::sync::Arc;
 use tracing::warn;
 
 /// Converts an Iceberg type to a DCE `DataType`.
@@ -70,6 +73,100 @@ fn primitive_to_dce(prim_type: &PrimitiveType) -> DcePrimitiveType {
         PrimitiveType::Uuid => DcePrimitiveType::Uuid,
         PrimitiveType::Fixed(_) => DcePrimitiveType::Binary,
         PrimitiveType::Binary => DcePrimitiveType::Binary,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DCE -> Iceberg conversion
+// ---------------------------------------------------------------------------
+
+/// Converts a DCE `DataType` to an Iceberg `Type`.
+///
+/// This is the reverse of `iceberg_type_to_dce_type`. Field IDs in complex
+/// types are generated starting from `field_id_start` and incrementing.
+pub fn dce_type_to_iceberg_type(
+    dce_type: &DataType,
+    field_id_start: &mut i32,
+) -> Result<IcebergType, IcebergError> {
+    match dce_type {
+        DataType::Primitive(prim) => Ok(IcebergType::Primitive(dce_to_primitive(prim))),
+
+        DataType::Struct { fields } => {
+            let iceberg_fields: Vec<Arc<NestedField>> = fields
+                .iter()
+                .map(|f| {
+                    let id = *field_id_start;
+                    *field_id_start += 1;
+                    let field_type = dce_type_to_iceberg_type(&f.data_type, field_id_start)?;
+                    let nf = if f.nullable {
+                        NestedField::optional(id, &f.name, field_type)
+                    } else {
+                        NestedField::required(id, &f.name, field_type)
+                    };
+                    Ok(Arc::new(nf))
+                })
+                .collect::<Result<Vec<_>, IcebergError>>()?;
+
+            Ok(IcebergType::Struct(StructType::new(iceberg_fields)))
+        }
+
+        DataType::List {
+            element_type,
+            contains_null,
+        } => {
+            let elem_id = *field_id_start;
+            *field_id_start += 1;
+            let elem_type = dce_type_to_iceberg_type(element_type, field_id_start)?;
+            let elem_field = if *contains_null {
+                NestedField::optional(elem_id, "element", elem_type)
+            } else {
+                NestedField::required(elem_id, "element", elem_type)
+            };
+            Ok(IcebergType::List(ListType::new(Arc::new(elem_field))))
+        }
+
+        DataType::Map {
+            key_type,
+            value_type,
+            value_contains_null,
+        } => {
+            let key_id = *field_id_start;
+            *field_id_start += 1;
+            let iceberg_key = dce_type_to_iceberg_type(key_type, field_id_start)?;
+
+            let val_id = *field_id_start;
+            *field_id_start += 1;
+            let iceberg_val = dce_type_to_iceberg_type(value_type, field_id_start)?;
+
+            let key_field = Arc::new(NestedField::required(key_id, "key", iceberg_key));
+            let val_field = if *value_contains_null {
+                Arc::new(NestedField::optional(val_id, "value", iceberg_val))
+            } else {
+                Arc::new(NestedField::required(val_id, "value", iceberg_val))
+            };
+            Ok(IcebergType::Map(MapType::new(key_field, val_field)))
+        }
+    }
+}
+
+/// Converts a DCE primitive type to an Iceberg PrimitiveType.
+fn dce_to_primitive(dce_prim: &DcePrimitiveType) -> PrimitiveType {
+    match dce_prim {
+        DcePrimitiveType::Boolean => PrimitiveType::Boolean,
+        DcePrimitiveType::Int32 => PrimitiveType::Int,
+        DcePrimitiveType::Int64 => PrimitiveType::Long,
+        DcePrimitiveType::Float32 => PrimitiveType::Float,
+        DcePrimitiveType::Float64 => PrimitiveType::Double,
+        DcePrimitiveType::Decimal => PrimitiveType::Decimal {
+            precision: 38,
+            scale: 18,
+        },
+        DcePrimitiveType::Date => PrimitiveType::Date,
+        DcePrimitiveType::Time => PrimitiveType::Time,
+        DcePrimitiveType::Timestamp => PrimitiveType::Timestamptz,
+        DcePrimitiveType::String => PrimitiveType::String,
+        DcePrimitiveType::Uuid => PrimitiveType::Uuid,
+        DcePrimitiveType::Binary => PrimitiveType::Binary,
     }
 }
 
@@ -388,5 +485,55 @@ mod tests {
         let result = arrow_value_to_data_value(&array, 1);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), DataValue::Null);
+    }
+
+    // ---- DCE -> Iceberg (reverse conversion) tests ----
+
+    #[test]
+    fn test_dce_primitive_to_iceberg() {
+        assert_eq!(
+            dce_to_primitive(&DcePrimitiveType::Boolean),
+            PrimitiveType::Boolean
+        );
+        assert_eq!(
+            dce_to_primitive(&DcePrimitiveType::Int32),
+            PrimitiveType::Int
+        );
+        assert_eq!(
+            dce_to_primitive(&DcePrimitiveType::Int64),
+            PrimitiveType::Long
+        );
+        assert_eq!(
+            dce_to_primitive(&DcePrimitiveType::Float64),
+            PrimitiveType::Double
+        );
+        assert_eq!(
+            dce_to_primitive(&DcePrimitiveType::String),
+            PrimitiveType::String
+        );
+        assert_eq!(
+            dce_to_primitive(&DcePrimitiveType::Timestamp),
+            PrimitiveType::Timestamptz
+        );
+    }
+
+    #[test]
+    fn test_dce_type_to_iceberg_primitive() {
+        let mut id = 1;
+        let result =
+            dce_type_to_iceberg_type(&DataType::Primitive(DcePrimitiveType::Int64), &mut id);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), IcebergType::Primitive(PrimitiveType::Long));
+        // Primitive doesn't consume field IDs
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn test_dce_roundtrip_primitive() {
+        let original = IcebergType::Primitive(PrimitiveType::String);
+        let dce = iceberg_type_to_dce_type(&original).unwrap();
+        let mut id = 1;
+        let back = dce_type_to_iceberg_type(&dce, &mut id).unwrap();
+        assert_eq!(original, back);
     }
 }
